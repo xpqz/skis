@@ -7,5 +7,5 @@ pub use db::SkisDb;
 pub use error::{Error, Result};
 pub use models::{
     Comment, Issue, IssueCreate, IssueFilter, IssueLink, IssueState, IssueType, IssueUpdate,
-    Label, SortField, SortOrder, StateReason,
+    Label, LinkedIssueRef, SortField, SortOrder, StateReason,
 };
