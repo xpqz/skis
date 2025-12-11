@@ -1,0 +1,19 @@
+[package]
+name = "skis-gui"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+skis.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }

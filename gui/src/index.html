@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SKIS</title>
+  <style>
+    body { font-family: system-ui; padding: 2rem; }
+    #result { margin-top: 1rem; padding: 1rem; background: #f0f0f0; }
+  </style>
+</head>
+<body>
+  <h1>SKIS</h1>
+  <button id="btn">Ping Backend</button>
+  <div id="result"></div>
+  <script>
+    const { invoke } = window.__TAURI__.core;
+    document.getElementById('btn').onclick = async () => {
+      const res = await invoke('ping');
+      document.getElementById('result').textContent = JSON.stringify(res, null, 2);
+    };
+  </script>
+</body>
+</html>

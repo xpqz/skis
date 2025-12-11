@@ -1,7 +1,22 @@
-[package]
-name = "skis"
+[workspace]
+members = [".", "gui/src-tauri"]
+resolver = "2"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
+
+[workspace.dependencies]
+skis = { path = "." }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1"
+
+[package]
+name = "skis"
+version.workspace = true
+edition.workspace = true
 
 [[bin]]
 name = "skis"
@@ -14,10 +29,10 @@ path = "src/lib.rs"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 rusqlite = { version = "0.31", features = ["bundled"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-chrono = { version = "0.4", features = ["serde"] }
-thiserror = "1"
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+thiserror.workspace = true
 colored = "2"
 tabled = "0.15"
 
@@ -25,4 +40,4 @@ tabled = "0.15"
 tempfile = "3"
 assert_cmd = "2"
 predicates = "3"
-serde_json = "1"
+serde_json.workspace = true
