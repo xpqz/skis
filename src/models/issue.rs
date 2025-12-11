@@ -132,7 +132,11 @@ pub struct IssueCreate {
     pub labels: Vec<String>,
 }
 
-/// Filter criteria for listing issues
+/// Filter criteria for listing issues.
+///
+/// Note: `Default` uses `state: None` (all states) and `limit: 30`.
+/// The CLI layer should set `state: Some(IssueState::Open)` to match
+/// PLAN.md's default behavior of showing only open issues.
 #[derive(Debug, Clone)]
 pub struct IssueFilter {
     pub state: Option<IssueState>,

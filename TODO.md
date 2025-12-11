@@ -4,9 +4,9 @@ Actionable implementation tasks for SKIS, organized by phase. Each task is testa
 
 ---
 
-## Phase 0: Project Setup
+## Phase 0: Project Setup ✅
 
-### 0.1 Configure Cargo.toml with dependencies
+### 0.1 Configure Cargo.toml with dependencies ✅
 
 Add required dependencies to `Cargo.toml`:
 
@@ -40,11 +40,11 @@ assert_cmd = "2"
 predicates = "3"
 ```
 
-**Acceptance**: `cargo check` succeeds.
+**Acceptance**: `cargo check` succeeds. ✅
 
 ---
 
-### 0.2 Create module structure
+### 0.2 Create module structure ✅
 
 Create the directory and file structure (matching PLAN.md architecture):
 
@@ -73,11 +73,11 @@ src/
 └── error.rs
 ```
 
-**Acceptance**: `cargo build` succeeds with empty module stubs.
+**Acceptance**: `cargo build` succeeds with empty module stubs. ✅
 
 ---
 
-### 0.3 Define error types
+### 0.3 Define error types ✅
 
 Create `src/error.rs` with a custom error enum using `thiserror`:
 
@@ -112,11 +112,11 @@ pub enum Error {
 pub type Result<T> = std::result::Result<T, Error>;
 ```
 
-**Acceptance**: Unit test that error messages match expected strings.
+**Acceptance**: Unit test that error messages match expected strings. ✅
 
 ---
 
-### 0.4 Set up test infrastructure
+### 0.4 Set up test infrastructure ✅
 
 Create `tests/common/mod.rs` with test helpers:
 
@@ -125,13 +125,13 @@ pub fn test_db() -> (SkisDb, TempDir) { ... }
 pub fn set_issue_timestamps(...) { ... }
 ```
 
-**Acceptance**: A trivial test using `test_db()` passes.
+**Acceptance**: A trivial test using `test_db()` passes. ✅
 
 ---
 
-## Phase 1: Core Foundation
+## Phase 1: Core Foundation (In Progress)
 
-### 1.1 Implement repository discovery
+### 1.1 Implement repository discovery ✅
 
 In `src/db/connection.rs`:
 
@@ -148,7 +148,7 @@ In `src/db/connection.rs`:
 
 ---
 
-### 1.2 Implement schema and migrations infrastructure
+### 1.2 Implement schema and migrations infrastructure ✅
 
 In `src/db/migrations.rs`:
 
@@ -164,7 +164,7 @@ In `src/db/migrations.rs`:
 
 ---
 
-### 1.3 Implement `SkisDb::init()`
+### 1.3 Implement `SkisDb::init()` ✅
 
 Create `.skis/` directory and initialize database:
 
@@ -199,7 +199,7 @@ Schema includes:
 
 ---
 
-### 1.4 Implement `SkisDb::open()` and `SkisDb::open_at()`
+### 1.4 Implement `SkisDb::open()` and `SkisDb::open_at()` ✅
 
 - `open()` - Find `.skis/` via discovery, open database
 - `open_at(path)` - Open database at specific path (for testing)
@@ -213,7 +213,7 @@ Schema includes:
 
 ---
 
-### 1.5 Define model structs
+### 1.5 Define model structs ✅
 
 In `src/models/`:
 
@@ -253,7 +253,7 @@ Implement `FromStr` for enums, `Default` for filter/create structs, `Serialize` 
 
 ---
 
-### 1.6 Implement `create_issue()`
+### 1.6 Implement `create_issue()` ✅
 
 - Insert into `issues` table
 - If labels provided, verify all exist (error with suggestion if not)
@@ -272,7 +272,7 @@ Implement `FromStr` for enums, `Default` for filter/create structs, `Serialize` 
 
 ---
 
-### 1.7 Implement `get_issue()`
+### 1.7 Implement `get_issue()` ✅
 
 - Query by ID
 - Return `Option<Issue>` (None if not found or deleted)
@@ -286,7 +286,7 @@ Implement `FromStr` for enums, `Default` for filter/create structs, `Serialize` 
 
 ---
 
-### 1.8 Implement `list_issues()`
+### 1.8 Implement `list_issues()` ✅
 
 - Build query based on `IssueFilter`
 - Filter by state, type, labels (AND logic)
@@ -312,7 +312,7 @@ Implement `FromStr` for enums, `Default` for filter/create structs, `Serialize` 
 
 ---
 
-### 1.9 Implement `close_issue()` and `reopen_issue()`
+### 1.9 Implement `close_issue()` and `reopen_issue()` ✅
 
 - `close_issue(id, reason)` - Set state=closed, state_reason, closed_at
 - `reopen_issue(id)` - Set state=open, clear state_reason and closed_at
@@ -330,7 +330,7 @@ Implement `FromStr` for enums, `Default` for filter/create structs, `Serialize` 
 
 ---
 
-### 1.10 Implement `delete_issue()` and `restore_issue()`
+### 1.10 Implement `delete_issue()` and `restore_issue()` ✅
 
 - `delete_issue(id)` - Set `deleted_at` to now
 - `restore_issue(id)` - Clear `deleted_at`
