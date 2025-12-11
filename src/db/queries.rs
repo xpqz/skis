@@ -5,8 +5,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::error::{Error, Result};
 use crate::models::{
-    validate_color, Comment, Issue, IssueCreate, IssueFilter, IssueState, IssueType, IssueUpdate,
-    Label, SortField, SortOrder, StateReason,
+    generate_color, validate_color, Comment, Issue, IssueCreate, IssueFilter, IssueState,
+    IssueType, IssueUpdate, Label, SortField, SortOrder, StateReason,
 };
 
 /// Create a new issue with optional labels
@@ -575,14 +575,18 @@ pub fn create_label(
     description: Option<&str>,
     color: Option<&str>,
 ) -> Result<Label> {
-    // Validate color if provided
-    if let Some(c) = color {
-        validate_color(c)?;
-    }
+    // Validate color if provided, otherwise auto-generate
+    let final_color = match color {
+        Some(c) => {
+            validate_color(c)?;
+            c.to_string()
+        }
+        None => generate_color(name),
+    };
 
     conn.execute(
         "INSERT INTO labels (name, description, color) VALUES (?1, ?2, ?3)",
-        params![name, description, color],
+        params![name, description, final_color],
     )?;
 
     let label_id = conn.last_insert_rowid();
@@ -2044,7 +2048,9 @@ mod tests {
 
         assert_eq!(label.name, "enhancement");
         assert_eq!(label.description, None);
-        assert_eq!(label.color, None);
+        // Color is auto-generated when not provided
+        assert!(label.color.is_some());
+        assert_eq!(label.color.as_ref().unwrap().len(), 6);
     }
 
     #[test]

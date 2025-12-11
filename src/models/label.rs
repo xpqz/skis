@@ -40,7 +40,6 @@ impl From<&Label> for LabelView {
 }
 
 /// Validate a hex color string (6 characters, no # prefix)
-#[allow(dead_code)] // Will be used in label creation
 pub fn validate_color(color: &str) -> Result<()> {
     if color.len() != 6 {
         return Err(Error::InvalidColor(color.to_string()));
@@ -51,6 +50,51 @@ pub fn validate_color(color: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Generate a color from a label name using a simple hash.
+/// Produces pleasant, saturated colors in HSL space then converts to hex.
+pub fn generate_color(name: &str) -> String {
+    // Simple hash: sum of bytes with position weighting
+    let hash: u32 = name
+        .to_lowercase()
+        .bytes()
+        .enumerate()
+        .fold(0u32, |acc, (i, b)| {
+            acc.wrapping_add((b as u32).wrapping_mul((i as u32).wrapping_add(1)))
+        });
+
+    // Use hash to pick hue (0-360), keep saturation and lightness fixed for pleasant colors
+    let hue = (hash % 360) as f32;
+    let saturation = 0.65;
+    let lightness = 0.45;
+
+    // Convert HSL to RGB
+    let (r, g, b) = hsl_to_rgb(hue, saturation, lightness);
+
+    format!("{:02x}{:02x}{:02x}", r, g, b)
+}
+
+/// Convert HSL to RGB (h: 0-360, s: 0-1, l: 0-1) -> (r, g, b) as u8
+fn hsl_to_rgb(h: f32, s: f32, l: f32) -> (u8, u8, u8) {
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let x = c * (1.0 - ((h / 60.0) % 2.0 - 1.0).abs());
+    let m = l - c / 2.0;
+
+    let (r, g, b) = match h as u32 {
+        0..=59 => (c, x, 0.0),
+        60..=119 => (x, c, 0.0),
+        120..=179 => (0.0, c, x),
+        180..=239 => (0.0, x, c),
+        240..=299 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+
+    (
+        ((r + m) * 255.0) as u8,
+        ((g + m) * 255.0) as u8,
+        ((b + m) * 255.0) as u8,
+    )
 }
 
 #[cfg(test)]
@@ -104,5 +148,35 @@ mod tests {
         let json = serde_json::to_string(&label).unwrap();
         assert!(json.contains("\"name\":\"bug\""));
         assert!(json.contains("\"color\":\"d73a4a\""));
+    }
+
+    #[test]
+    fn generate_color_is_valid_hex() {
+        let color = generate_color("bug");
+        assert_eq!(color.len(), 6);
+        assert!(validate_color(&color).is_ok());
+    }
+
+    #[test]
+    fn generate_color_is_deterministic() {
+        assert_eq!(generate_color("bug"), generate_color("bug"));
+        assert_eq!(generate_color("feature"), generate_color("feature"));
+    }
+
+    #[test]
+    fn generate_color_is_case_insensitive() {
+        assert_eq!(generate_color("Bug"), generate_color("bug"));
+        assert_eq!(generate_color("BUG"), generate_color("bug"));
+    }
+
+    #[test]
+    fn generate_color_different_names_different_colors() {
+        let bug = generate_color("bug");
+        let feature = generate_color("feature");
+        let urgent = generate_color("urgent");
+        // Different names should produce different colors
+        assert_ne!(bug, feature);
+        assert_ne!(bug, urgent);
+        assert_ne!(feature, urgent);
     }
 }

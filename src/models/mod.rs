@@ -7,4 +7,4 @@ pub use issue::{
     Issue, IssueCreate, IssueFilter, IssueLink, IssueState, IssueType, IssueUpdate, IssueView,
     LinkedIssueRef, SortField, SortOrder, StateReason,
 };
-pub use label::{validate_color, Label, LabelView};
+pub use label::{generate_color, validate_color, Label, LabelView};
