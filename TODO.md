@@ -736,9 +736,9 @@ Return labels for an issue (used in view output).
 
 ---
 
-## Phase 4: Polish
+## Phase 4: Polish ✅
 
-### 4.1 Implement `--json` output for `skis issue view`
+### 4.1 Implement `--json` output for `skis issue view` ✅
 
 Serialize issue to JSON matching schema in PLAN.md.
 
@@ -771,7 +771,7 @@ Serialize issue list to JSON array.
 
 ---
 
-### 4.4 Implement `skis issue close --comment`
+### 4.4 Implement `skis issue close --comment` ✅
 
 Option: `-c/--comment <BODY>` - Add comment when closing
 
@@ -782,7 +782,7 @@ Option: `-c/--comment <BODY>` - Add comment when closing
 
 ---
 
-### 4.5 Implement `--body-file` for issue create/edit/comment
+### 4.5 Implement `--body-file` for issue create/edit/comment ✅
 
 Option: `-F/--body-file <FILE>` - Read body from file (use `-` for stdin)
 
@@ -840,7 +840,7 @@ Display "2 hours ago", "3 days ago" instead of raw timestamps.
 
 ---
 
-### 4.10 Final integration test: full workflow
+### 4.10 Final integration test: full workflow ✅
 
 End-to-end test covering complete user journey:
 

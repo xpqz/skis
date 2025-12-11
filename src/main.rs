@@ -62,6 +62,10 @@ pub struct IssueCreateArgs {
     #[arg(short, long)]
     pub body: Option<String>,
 
+    /// Read body from file (use - for stdin)
+    #[arg(short = 'F', long)]
+    pub body_file: Option<String>,
+
     /// Issue type: epic, task, bug, request
     #[arg(short = 'T', long = "type", default_value = "task")]
     pub issue_type: String,
@@ -141,6 +145,10 @@ pub struct IssueEditArgs {
     #[arg(short, long)]
     pub body: Option<String>,
 
+    /// Read body from file (use - for stdin)
+    #[arg(short = 'F', long)]
+    pub body_file: Option<String>,
+
     /// Change issue type
     #[arg(short = 'T', long = "type")]
     pub issue_type: Option<String>,
@@ -162,6 +170,10 @@ pub struct IssueCloseArgs {
     /// Reason: completed, not_planned
     #[arg(short, long, default_value = "completed")]
     pub reason: String,
+
+    /// Add a comment when closing
+    #[arg(short = 'C', long)]
+    pub comment: Option<String>,
 }
 
 #[derive(Args)]
@@ -191,9 +203,13 @@ pub struct IssueCommentArgs {
     /// Issue number
     pub number: i64,
 
-    /// Comment body (required)
+    /// Comment body
     #[arg(short, long)]
-    pub body: String,
+    pub body: Option<String>,
+
+    /// Read body from file (use - for stdin)
+    #[arg(short = 'F', long)]
+    pub body_file: Option<String>,
 }
 
 #[derive(Args)]

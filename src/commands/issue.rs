@@ -1,10 +1,11 @@
+use std::io::Read;
 use std::str::FromStr;
 
 use ski::db::{self, SkisDb};
 use ski::error::Result;
 use ski::models::{
-    Issue, IssueCreate, IssueFilter, IssueState, IssueType, IssueUpdate, SortField, SortOrder,
-    StateReason,
+    Issue, IssueCreate, IssueFilter, IssueState, IssueType, IssueUpdate, IssueView, SortField,
+    SortOrder, StateReason,
 };
 
 use crate::{
@@ -12,6 +13,26 @@ use crate::{
     IssueListArgs, IssueLinkArgs, IssueReopenArgs, IssueRestoreArgs, IssueUnlinkArgs,
     IssueViewArgs,
 };
+
+/// Read body content from file or stdin (if path is "-")
+fn read_body_from_file(path: &str) -> Result<String> {
+    if path == "-" {
+        let mut content = String::new();
+        std::io::stdin().read_to_string(&mut content)?;
+        Ok(content)
+    } else {
+        Ok(std::fs::read_to_string(path)?)
+    }
+}
+
+/// Resolve body from --body or --body-file options
+fn resolve_body(body: Option<String>, body_file: Option<String>) -> Result<Option<String>> {
+    match (body, body_file) {
+        (Some(b), _) => Ok(Some(b)),
+        (None, Some(path)) => Ok(Some(read_body_from_file(&path)?)),
+        (None, None) => Ok(None),
+    }
+}
 
 pub fn create(args: IssueCreateArgs) -> Result<()> {
     let title = match args.title {
@@ -23,11 +44,12 @@ pub fn create(args: IssueCreateArgs) -> Result<()> {
     };
 
     let issue_type = IssueType::from_str(&args.issue_type)?;
+    let body = resolve_body(args.body, args.body_file)?;
 
     let db = SkisDb::open()?;
     let create = IssueCreate {
         title,
-        body: args.body,
+        body,
         issue_type,
         labels: args.labels,
     };
@@ -132,7 +154,25 @@ pub fn view(args: IssueViewArgs) -> Result<()> {
         .ok_or_else(|| ski::error::Error::IssueNotFound(args.number))?;
 
     if args.json {
-        println!("{}", serde_json::to_string_pretty(&issue)?);
+        // Build enriched view with labels and linked issues
+        let labels = db::get_issue_labels(db.conn(), issue.id)?;
+        let linked_issues = db::get_linked_issues_with_titles(db.conn(), issue.id)?;
+
+        let view = IssueView {
+            id: issue.id,
+            title: issue.title.clone(),
+            body: issue.body.clone(),
+            issue_type: issue.issue_type,
+            state: issue.state,
+            state_reason: issue.state_reason,
+            labels,
+            linked_issues,
+            created_at: issue.created_at,
+            updated_at: issue.updated_at,
+            closed_at: issue.closed_at,
+            deleted_at: issue.deleted_at,
+        };
+        println!("{}", serde_json::to_string_pretty(&view)?);
     } else {
         print_issue_view(db.conn(), &issue, args.comments)?;
     }
@@ -196,9 +236,11 @@ pub fn edit(args: IssueEditArgs) -> Result<()> {
         .map(|t| IssueType::from_str(&t))
         .transpose()?;
 
+    let body = resolve_body(args.body, args.body_file)?;
+
     let update = IssueUpdate {
         title: args.title,
-        body: args.body,
+        body,
         issue_type,
     };
 
@@ -222,6 +264,12 @@ pub fn close(args: IssueCloseArgs) -> Result<()> {
     let db = SkisDb::open()?;
     let reason = StateReason::from_str(&args.reason)?;
     let issue = db::close_issue(db.conn(), args.number, reason)?;
+
+    // Add comment if provided
+    if let Some(comment_body) = &args.comment {
+        db::add_comment(db.conn(), args.number, comment_body)?;
+    }
+
     println!("Closed issue #{} as {}", issue.id, args.reason);
     Ok(())
 }
@@ -258,8 +306,17 @@ pub fn restore(args: IssueRestoreArgs) -> Result<()> {
 }
 
 pub fn comment(args: IssueCommentArgs) -> Result<()> {
+    let body = resolve_body(args.body, args.body_file)?;
+    let body = match body {
+        Some(b) => b,
+        None => {
+            eprintln!("error: --body or --body-file is required");
+            std::process::exit(1);
+        }
+    };
+
     let db = SkisDb::open()?;
-    let comment = db::add_comment(db.conn(), args.number, &args.body)?;
+    let comment = db::add_comment(db.conn(), args.number, &body)?;
     println!("Added comment #{} to issue #{}", comment.id, args.number);
     Ok(())
 }

@@ -518,6 +518,33 @@ pub fn get_linked_issues(conn: &Connection, issue_id: i64) -> Result<Vec<i64>> {
     Ok(ids)
 }
 
+/// Get linked issues with their titles (for JSON output)
+pub fn get_linked_issues_with_titles(
+    conn: &Connection,
+    issue_id: i64,
+) -> Result<Vec<crate::models::LinkedIssueRef>> {
+    let mut stmt = conn.prepare(
+        "SELECT i.id, i.title
+         FROM issues i
+         INNER JOIN issue_links l ON (
+             (l.issue_a_id = ?1 AND l.issue_b_id = i.id) OR
+             (l.issue_b_id = ?1 AND l.issue_a_id = i.id)
+         )
+         WHERE i.id != ?1",
+    )?;
+
+    let refs = stmt
+        .query_map([issue_id], |row| {
+            Ok(crate::models::LinkedIssueRef {
+                id: row.get(0)?,
+                title: row.get(1)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    Ok(refs)
+}
+
 // Phase 3: Label operations
 
 /// Create a new label

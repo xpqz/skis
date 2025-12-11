@@ -186,6 +186,31 @@ pub struct IssueLink {
     pub created_at: DateTime<Utc>,
 }
 
+/// A linked issue reference for JSON output (id + title)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkedIssueRef {
+    pub id: i64,
+    pub title: String,
+}
+
+/// Enriched issue view for JSON output (includes labels and linked issues)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IssueView {
+    pub id: i64,
+    pub title: String,
+    pub body: Option<String>,
+    #[serde(rename = "type")]
+    pub issue_type: IssueType,
+    pub state: IssueState,
+    pub state_reason: Option<StateReason>,
+    pub labels: Vec<super::Label>,
+    pub linked_issues: Vec<LinkedIssueRef>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub closed_at: Option<DateTime<Utc>>,
+    pub deleted_at: Option<DateTime<Utc>>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
