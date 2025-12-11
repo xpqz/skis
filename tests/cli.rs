@@ -504,3 +504,290 @@ fn cli_discovers_skis_in_parent_directory() {
         .success()
         .stdout(predicate::str::contains("Created issue #1"));
 }
+
+// Phase 2: Task 2.2 - issue edit CLI tests
+
+#[test]
+fn cli_issue_edit_title() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "Original"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "edit", "1", "--title", "Updated"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Updated issue #1"));
+
+    // Verify the change
+    skis()
+        .args(["issue", "view", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Updated"));
+}
+
+#[test]
+fn cli_issue_edit_type() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "Test", "--type", "task"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "edit", "1", "--type", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "view", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bug"));
+}
+
+#[test]
+fn cli_issue_edit_nonexistent_shows_error() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "edit", "999", "--title", "New"])
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Issue #999 not found"));
+}
+
+// Phase 2: Task 2.4 - issue comment CLI tests
+
+#[test]
+fn cli_issue_comment_with_body() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "Test"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "comment", "1", "--body", "This is a comment"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Added comment"));
+}
+
+// Phase 2: Task 2.5 - issue view with comments
+
+#[test]
+fn cli_issue_view_with_comments() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "Test"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "comment", "1", "--body", "My comment text"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "view", "1", "--comments"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("My comment text"));
+}
+
+#[test]
+fn cli_issue_view_without_comments_flag_hides_comments() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "Test"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "comment", "1", "--body", "Hidden comment"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // Without --comments flag, comment should not appear
+    skis()
+        .args(["issue", "view", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Hidden comment").not());
+}
+
+// Phase 2: Task 2.7 - issue list with search
+
+#[test]
+fn cli_issue_list_search() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "Login bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "create", "--title", "Update docs"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "list", "--search", "login"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Login bug"))
+        .stdout(predicate::str::contains("Update docs").not());
+}
+
+#[test]
+fn cli_issue_list_search_with_filters() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "Open searchable", "--type", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "create", "--title", "Another searchable", "--type", "task"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // Search with type filter
+    skis()
+        .args(["issue", "list", "--search", "searchable", "--type", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Open searchable"))
+        .stdout(predicate::str::contains("Another searchable").not());
+}
+
+// Phase 2: Task 2.9 - issue link/unlink CLI tests
+
+#[test]
+fn cli_issue_link() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "Issue 1"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "create", "--title", "Issue 2"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "link", "1", "2"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Linked"));
+}
+
+#[test]
+fn cli_issue_unlink() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "Issue 1"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "create", "--title", "Issue 2"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "link", "1", "2"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "unlink", "1", "2"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Unlinked"));
+}
+
+// Phase 2: Task 2.10 - issue view shows links
+
+#[test]
+fn cli_issue_view_shows_links() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "Issue 1"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "create", "--title", "Issue 2"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "link", "1", "2"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "view", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("#2"));
+}

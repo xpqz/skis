@@ -3,7 +3,7 @@ use std::str::FromStr;
 use ski::db::{self, SkisDb};
 use ski::error::Result;
 use ski::models::{
-    IssueCreate, IssueFilter, IssueState, IssueType, IssueUpdate, SortField, SortOrder,
+    Issue, IssueCreate, IssueFilter, IssueState, IssueType, IssueUpdate, SortField, SortOrder,
     StateReason,
 };
 
@@ -91,7 +91,11 @@ pub fn list(args: IssueListArgs) -> Result<()> {
         offset: args.offset,
     };
 
-    let issues = db::list_issues(db.conn(), &filter)?;
+    let issues = if let Some(query) = &args.search {
+        db::search_issues(db.conn(), query, &filter)?
+    } else {
+        db::list_issues(db.conn(), &filter)?
+    };
 
     if args.json {
         println!("{}", serde_json::to_string_pretty(&issues)?);
@@ -123,15 +127,47 @@ pub fn view(args: IssueViewArgs) -> Result<()> {
     if args.json {
         println!("{}", serde_json::to_string_pretty(&issue)?);
     } else {
-        println!("#{} {}", issue.id, issue.title);
-        println!("Type: {}  State: {}", issue.issue_type, issue.state);
-        if let Some(reason) = &issue.state_reason {
-            println!("Closed: {}", reason);
-        }
-        println!("Created: {}", issue.created_at);
-        println!("Updated: {}", issue.updated_at);
-        if let Some(body) = &issue.body {
-            println!("\n{}", body);
+        print_issue_view(db.conn(), &issue, args.comments)?;
+    }
+
+    Ok(())
+}
+
+fn print_issue_view(
+    conn: &rusqlite::Connection,
+    issue: &Issue,
+    show_comments: bool,
+) -> Result<()> {
+    println!("#{} {}", issue.id, issue.title);
+    println!("Type: {}  State: {}", issue.issue_type, issue.state);
+    if let Some(reason) = &issue.state_reason {
+        println!("Closed: {}", reason);
+    }
+    println!("Created: {}", issue.created_at);
+    println!("Updated: {}", issue.updated_at);
+
+    // Show linked issues
+    let linked = db::get_linked_issues(conn, issue.id)?;
+    if !linked.is_empty() {
+        let linked_str: Vec<String> = linked.iter().map(|id| format!("#{}", id)).collect();
+        println!("Linked: {}", linked_str.join(", "));
+    }
+
+    if let Some(body) = &issue.body {
+        println!("\n{}", body);
+    }
+
+    // Show comments if requested
+    if show_comments {
+        let comments = db::get_comments(conn, issue.id)?;
+        if !comments.is_empty() {
+            println!("\nComments:");
+            println!("{}", "-".repeat(40));
+            for comment in comments {
+                println!("[{}]", comment.created_at);
+                println!("{}", comment.body);
+                println!();
+            }
         }
     }
 
@@ -196,14 +232,23 @@ pub fn restore(args: IssueRestoreArgs) -> Result<()> {
     Ok(())
 }
 
-pub fn comment(_args: IssueCommentArgs) -> Result<()> {
-    Err(ski::error::Error::NotImplemented("issue comment".to_string()))
+pub fn comment(args: IssueCommentArgs) -> Result<()> {
+    let db = SkisDb::open()?;
+    let comment = db::add_comment(db.conn(), args.number, &args.body)?;
+    println!("Added comment #{} to issue #{}", comment.id, args.number);
+    Ok(())
 }
 
-pub fn link(_args: IssueLinkArgs) -> Result<()> {
-    Err(ski::error::Error::NotImplemented("issue link".to_string()))
+pub fn link(args: IssueLinkArgs) -> Result<()> {
+    let db = SkisDb::open()?;
+    db::add_link(db.conn(), args.issue_a, args.issue_b)?;
+    println!("Linked issue #{} and #{}", args.issue_a, args.issue_b);
+    Ok(())
 }
 
-pub fn unlink(_args: IssueUnlinkArgs) -> Result<()> {
-    Err(ski::error::Error::NotImplemented("issue unlink".to_string()))
+pub fn unlink(args: IssueUnlinkArgs) -> Result<()> {
+    let db = SkisDb::open()?;
+    db::remove_link(db.conn(), args.issue_a, args.issue_b)?;
+    println!("Unlinked issue #{} and #{}", args.issue_a, args.issue_b);
+    Ok(())
 }

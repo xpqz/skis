@@ -5,8 +5,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::error::{Error, Result};
 use crate::models::{
-    Issue, IssueCreate, IssueFilter, IssueState, IssueType, IssueUpdate, SortField, SortOrder,
-    StateReason,
+    Comment, Issue, IssueCreate, IssueFilter, IssueState, IssueType, IssueUpdate, SortField,
+    SortOrder, StateReason,
 };
 
 /// Create a new issue with optional labels
@@ -295,6 +295,220 @@ pub fn update_issue(conn: &Connection, id: i64, update: &IssueUpdate) -> Result<
     conn.execute(&sql, params_refs.as_slice())?;
 
     get_issue(conn, id)?.ok_or(Error::IssueNotFound(id))
+}
+
+// Phase 2: Comment operations
+
+/// Add a comment to an issue
+pub fn add_comment(conn: &Connection, issue_id: i64, body: &str) -> Result<Comment> {
+    // Verify issue exists
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM issues WHERE id = ?1)",
+        [issue_id],
+        |row| row.get(0),
+    )?;
+    if !exists {
+        return Err(Error::IssueNotFound(issue_id));
+    }
+
+    conn.execute(
+        "INSERT INTO comments (issue_id, body) VALUES (?1, ?2)",
+        params![issue_id, body],
+    )?;
+
+    let comment_id = conn.last_insert_rowid();
+
+    conn.query_row(
+        "SELECT id, issue_id, body, created_at, updated_at FROM comments WHERE id = ?1",
+        [comment_id],
+        |row| {
+            Ok(Comment {
+                id: row.get(0)?,
+                issue_id: row.get(1)?,
+                body: row.get(2)?,
+                created_at: parse_datetime(row.get(3)?),
+                updated_at: parse_datetime(row.get(4)?),
+            })
+        },
+    )
+    .map_err(Error::from)
+}
+
+/// Get all comments for an issue, ordered by creation time
+pub fn get_comments(conn: &Connection, issue_id: i64) -> Result<Vec<Comment>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, issue_id, body, created_at, updated_at
+         FROM comments
+         WHERE issue_id = ?1
+         ORDER BY created_at ASC",
+    )?;
+
+    let comments = stmt
+        .query_map([issue_id], |row| {
+            Ok(Comment {
+                id: row.get(0)?,
+                issue_id: row.get(1)?,
+                body: row.get(2)?,
+                created_at: parse_datetime(row.get(3)?),
+                updated_at: parse_datetime(row.get(4)?),
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    Ok(comments)
+}
+
+// Phase 2: Search operations
+
+/// Search issues using FTS5 full-text search
+pub fn search_issues(conn: &Connection, query: &str, filter: &IssueFilter) -> Result<Vec<Issue>> {
+    // Build the query dynamically based on filter
+    let mut sql = String::from(
+        "SELECT i.id, i.title, i.body, i.type, i.state, i.state_reason,
+                i.created_at, i.updated_at, i.closed_at, i.deleted_at
+         FROM issues i
+         JOIN issues_fts fts ON i.id = fts.rowid
+         WHERE issues_fts MATCH ?1",
+    );
+
+    let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(query.to_string())];
+    let mut param_idx = 2;
+
+    // Add state filter
+    if let Some(state) = &filter.state {
+        sql.push_str(&format!(" AND i.state = ?{}", param_idx));
+        params_vec.push(Box::new(state.to_string()));
+        param_idx += 1;
+    }
+
+    // Add type filter
+    if let Some(issue_type) = &filter.issue_type {
+        sql.push_str(&format!(" AND i.type = ?{}", param_idx));
+        params_vec.push(Box::new(issue_type.to_string()));
+        param_idx += 1;
+    }
+
+    // Exclude deleted unless requested
+    if !filter.include_deleted {
+        sql.push_str(" AND i.deleted_at IS NULL");
+    }
+
+    // Add label filters (AND logic)
+    for label in &filter.labels {
+        sql.push_str(&format!(
+            " AND EXISTS (SELECT 1 FROM issue_labels il
+                          JOIN labels l ON il.label_id = l.id
+                          WHERE il.issue_id = i.id AND l.name = ?{} COLLATE NOCASE)",
+            param_idx
+        ));
+        params_vec.push(Box::new(label.clone()));
+        param_idx += 1;
+    }
+
+    // Add sorting
+    let sort_col = match filter.sort_by {
+        SortField::Updated => "i.updated_at",
+        SortField::Created => "i.created_at",
+        SortField::Id => "i.id",
+    };
+    let sort_dir = match filter.sort_order {
+        SortOrder::Asc => "ASC",
+        SortOrder::Desc => "DESC",
+    };
+    sql.push_str(&format!(" ORDER BY {} {}", sort_col, sort_dir));
+
+    // Add pagination
+    sql.push_str(&format!(" LIMIT {} OFFSET {}", filter.limit, filter.offset));
+
+    let mut stmt = conn.prepare(&sql)?;
+
+    // Convert params to references
+    let params_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+
+    let issues = stmt
+        .query_map(params_refs.as_slice(), |row| {
+            Ok(Issue {
+                id: row.get(0)?,
+                title: row.get(1)?,
+                body: row.get(2)?,
+                issue_type: parse_issue_type(row.get(3)?),
+                state: parse_issue_state(row.get(4)?),
+                state_reason: row.get::<_, Option<String>>(5)?.map(parse_state_reason),
+                created_at: parse_datetime(row.get(6)?),
+                updated_at: parse_datetime(row.get(7)?),
+                closed_at: row.get::<_, Option<String>>(8)?.map(parse_datetime),
+                deleted_at: row.get::<_, Option<String>>(9)?.map(parse_datetime),
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    Ok(issues)
+}
+
+// Phase 2: Link operations
+
+/// Link two issues together (bidirectional)
+pub fn add_link(conn: &Connection, issue_a: i64, issue_b: i64) -> Result<()> {
+    // Check for self-link
+    if issue_a == issue_b {
+        return Err(Error::SelfLink);
+    }
+
+    // Store with canonical ordering (smaller ID first)
+    let (min_id, max_id) = if issue_a < issue_b {
+        (issue_a, issue_b)
+    } else {
+        (issue_b, issue_a)
+    };
+
+    // Check if link already exists
+    let exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM issue_links WHERE issue_a_id = ?1 AND issue_b_id = ?2)",
+        params![min_id, max_id],
+        |row| row.get(0),
+    )?;
+    if exists {
+        return Err(Error::DuplicateLink(min_id, max_id));
+    }
+
+    conn.execute(
+        "INSERT INTO issue_links (issue_a_id, issue_b_id) VALUES (?1, ?2)",
+        params![min_id, max_id],
+    )?;
+
+    Ok(())
+}
+
+/// Remove a link between two issues
+pub fn remove_link(conn: &Connection, issue_a: i64, issue_b: i64) -> Result<()> {
+    // Use canonical ordering
+    let (min_id, max_id) = if issue_a < issue_b {
+        (issue_a, issue_b)
+    } else {
+        (issue_b, issue_a)
+    };
+
+    conn.execute(
+        "DELETE FROM issue_links WHERE issue_a_id = ?1 AND issue_b_id = ?2",
+        params![min_id, max_id],
+    )?;
+
+    Ok(())
+}
+
+/// Get all issue IDs linked to a given issue
+pub fn get_linked_issues(conn: &Connection, issue_id: i64) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare(
+        "SELECT CASE WHEN issue_a_id = ?1 THEN issue_b_id ELSE issue_a_id END as linked_id
+         FROM issue_links
+         WHERE issue_a_id = ?1 OR issue_b_id = ?1",
+    )?;
+
+    let ids = stmt
+        .query_map([issue_id], |row| row.get(0))?
+        .collect::<std::result::Result<Vec<i64>, _>>()?;
+
+    Ok(ids)
 }
 
 // Helper functions for parsing database values
@@ -1178,5 +1392,362 @@ mod tests {
         .unwrap();
 
         assert!(updated.updated_at >= original_updated);
+    }
+
+    // Task 2.3: Comment tests
+
+    #[test]
+    fn add_comment_to_issue() {
+        let (db, _dir) = test_db();
+        let issue = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Test".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let comment = add_comment(db.conn(), issue.id, "This is a comment").unwrap();
+
+        assert_eq!(comment.issue_id, issue.id);
+        assert_eq!(comment.body, "This is a comment");
+        assert!(comment.id > 0);
+    }
+
+    #[test]
+    fn get_comments_returns_in_order() {
+        let (db, _dir) = test_db();
+        let issue = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Test".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        add_comment(db.conn(), issue.id, "First").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        add_comment(db.conn(), issue.id, "Second").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        add_comment(db.conn(), issue.id, "Third").unwrap();
+
+        let comments = get_comments(db.conn(), issue.id).unwrap();
+
+        assert_eq!(comments.len(), 3);
+        assert_eq!(comments[0].body, "First");
+        assert_eq!(comments[1].body, "Second");
+        assert_eq!(comments[2].body, "Third");
+    }
+
+    #[test]
+    fn add_comment_to_nonexistent_issue_errors() {
+        let (db, _dir) = test_db();
+
+        let result = add_comment(db.conn(), 9999, "Comment");
+        assert!(result.is_err());
+    }
+
+    // Task 2.6: Search tests
+
+    #[test]
+    fn search_finds_title_match() {
+        let (db, _dir) = test_db();
+        create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Login button broken".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Update documentation".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let results = search_issues(db.conn(), "login", &IssueFilter::default()).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].title.contains("Login"));
+    }
+
+    #[test]
+    fn search_finds_body_match() {
+        let (db, _dir) = test_db();
+        create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Bug report".to_string(),
+                body: Some("The authentication system fails".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let results = search_issues(db.conn(), "authentication", &IssueFilter::default()).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].title, "Bug report");
+    }
+
+    #[test]
+    fn search_respects_state_filter() {
+        let (db, _dir) = test_db();
+        let issue1 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Open searchable issue".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let issue2 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Closed searchable issue".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        close_issue(db.conn(), issue2.id, StateReason::Completed).unwrap();
+
+        // Search only open issues
+        let open_filter = IssueFilter {
+            state: Some(IssueState::Open),
+            ..Default::default()
+        };
+        let results = search_issues(db.conn(), "searchable", &open_filter).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, issue1.id);
+    }
+
+    #[test]
+    fn search_respects_label_filter() {
+        let (db, _dir) = test_db();
+
+        // Create label
+        db.conn()
+            .execute("INSERT INTO labels (name) VALUES ('urgent')", [])
+            .unwrap();
+
+        let issue1 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Important task".to_string(),
+                labels: vec!["urgent".to_string()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Important but not urgent".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let filter = IssueFilter {
+            labels: vec!["urgent".to_string()],
+            ..Default::default()
+        };
+        let results = search_issues(db.conn(), "important", &filter).unwrap();
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, issue1.id);
+    }
+
+    // Task 2.8: Link tests
+
+    #[test]
+    fn link_is_bidirectional() {
+        let (db, _dir) = test_db();
+        let issue1 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Issue 1".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let issue2 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Issue 2".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        add_link(db.conn(), issue1.id, issue2.id).unwrap();
+
+        // Both issues should see the link
+        let links_from_1 = get_linked_issues(db.conn(), issue1.id).unwrap();
+        let links_from_2 = get_linked_issues(db.conn(), issue2.id).unwrap();
+
+        assert_eq!(links_from_1.len(), 1);
+        assert_eq!(links_from_1[0], issue2.id);
+        assert_eq!(links_from_2.len(), 1);
+        assert_eq!(links_from_2[0], issue1.id);
+    }
+
+    #[test]
+    fn link_order_does_not_matter() {
+        let (db, _dir) = test_db();
+        let issue1 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Issue 1".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let issue2 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Issue 2".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        // Link with larger ID first
+        add_link(db.conn(), issue2.id, issue1.id).unwrap();
+
+        let links = get_linked_issues(db.conn(), issue1.id).unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0], issue2.id);
+    }
+
+    #[test]
+    fn duplicate_link_fails() {
+        let (db, _dir) = test_db();
+        let issue1 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Issue 1".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let issue2 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Issue 2".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        add_link(db.conn(), issue1.id, issue2.id).unwrap();
+        let result = add_link(db.conn(), issue1.id, issue2.id);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn duplicate_link_reversed_order_fails() {
+        let (db, _dir) = test_db();
+        let issue1 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Issue 1".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let issue2 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Issue 2".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        add_link(db.conn(), issue1.id, issue2.id).unwrap();
+        // Try to link in reverse order - should fail as duplicate
+        let result = add_link(db.conn(), issue2.id, issue1.id);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn unlink_order_does_not_matter() {
+        let (db, _dir) = test_db();
+        let issue1 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Issue 1".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let issue2 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Issue 2".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        add_link(db.conn(), issue1.id, issue2.id).unwrap();
+        // Remove with reversed order
+        remove_link(db.conn(), issue2.id, issue1.id).unwrap();
+
+        let links = get_linked_issues(db.conn(), issue1.id).unwrap();
+        assert!(links.is_empty());
+    }
+
+    #[test]
+    fn self_link_fails() {
+        let (db, _dir) = test_db();
+        let issue = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Issue".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let result = add_link(db.conn(), issue.id, issue.id);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn link_to_deleted_issue_allowed() {
+        let (db, _dir) = test_db();
+        let issue1 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Issue 1".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let issue2 = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Issue 2".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        delete_issue(db.conn(), issue2.id).unwrap();
+
+        // Should still be able to link to deleted issue
+        let result = add_link(db.conn(), issue1.id, issue2.id);
+        assert!(result.is_ok());
     }
 }

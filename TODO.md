@@ -496,7 +496,7 @@ Argument: `<NUMBER>`
 
 ---
 
-### 2.2 Implement `skis issue edit` command
+### 2.2 Implement `skis issue edit` command ✅
 
 Argument: `<NUMBER>`, Options: `-t/--title`, `-b/--body`, `-T/--type`
 
@@ -509,7 +509,7 @@ Argument: `<NUMBER>`, Options: `-t/--title`, `-b/--body`, `-T/--type`
 
 ---
 
-### 2.3 Implement `add_comment()` and `get_comments()`
+### 2.3 Implement `add_comment()` and `get_comments()` ✅
 
 - `add_comment(issue_id, body)` - Insert comment, return `Comment`
 - `get_comments(issue_id)` - Return all comments for issue, ordered by created_at
@@ -523,7 +523,7 @@ Argument: `<NUMBER>`, Options: `-t/--title`, `-b/--body`, `-T/--type`
 
 ---
 
-### 2.4 Implement `skis issue comment` command
+### 2.4 Implement `skis issue comment` command ✅
 
 Argument: `<NUMBER>`, Options: `-b/--body`
 
@@ -534,7 +534,7 @@ Argument: `<NUMBER>`, Options: `-b/--body`
 
 ---
 
-### 2.5 Implement `skis issue view --comments`
+### 2.5 Implement `skis issue view --comments` ✅
 
 - Include comments in view output when `-c/--comments` flag is set
 
@@ -546,7 +546,7 @@ Argument: `<NUMBER>`, Options: `-b/--body`
 
 ---
 
-### 2.6 Implement `search_issues()`
+### 2.6 Implement `search_issues()` ✅
 
 - Use FTS5 `issues_fts` table
 - Combine with `IssueFilter` for state/type/label filtering
@@ -564,7 +564,7 @@ Argument: `<NUMBER>`, Options: `-b/--body`
 
 ---
 
-### 2.7 Implement `skis issue list --search`
+### 2.7 Implement `skis issue list --search` ✅
 
 Option: `-S/--search <QUERY>`
 
@@ -576,7 +576,7 @@ Option: `-S/--search <QUERY>`
 
 ---
 
-### 2.8 Implement issue links: `add_link()`, `remove_link()`, `get_linked_issues()`
+### 2.8 Implement issue links: `add_link()`, `remove_link()`, `get_linked_issues()` ✅
 
 - `add_link(a, b)` - Store with canonical ordering (min, max)
 - `remove_link(a, b)` - Remove regardless of order provided
@@ -595,7 +595,7 @@ Option: `-S/--search <QUERY>`
 
 ---
 
-### 2.9 Implement `skis issue link` and `skis issue unlink` commands
+### 2.9 Implement `skis issue link` and `skis issue unlink` commands ✅
 
 Arguments: `<ISSUE_A> <ISSUE_B>`
 
@@ -608,7 +608,7 @@ Arguments: `<ISSUE_A> <ISSUE_B>`
 
 ---
 
-### 2.10 Show linked issues in `skis issue view`
+### 2.10 Show linked issues in `skis issue view` ✅
 
 Display linked issues in view output.
 

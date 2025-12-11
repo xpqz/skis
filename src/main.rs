@@ -77,6 +77,10 @@ pub struct IssueListArgs {
     #[arg(short, long, default_value = "open")]
     pub state: String,
 
+    /// Search query (full-text)
+    #[arg(long)]
+    pub search: Option<String>,
+
     /// Filter by type: epic, task, bug, request
     #[arg(short = 'T', long = "type")]
     pub issue_type: Option<String>,
@@ -114,6 +118,10 @@ pub struct IssueListArgs {
 pub struct IssueViewArgs {
     /// Issue number
     pub number: i64,
+
+    /// Include comments in output
+    #[arg(long)]
+    pub comments: bool,
 
     /// Output as JSON
     #[arg(long)]
@@ -175,9 +183,9 @@ pub struct IssueCommentArgs {
     /// Issue number
     pub number: i64,
 
-    /// Comment body
+    /// Comment body (required)
     #[arg(short, long)]
-    pub body: Option<String>,
+    pub body: String,
 }
 
 #[derive(Args)]
