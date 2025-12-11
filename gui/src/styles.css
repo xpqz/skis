@@ -562,7 +562,7 @@ button {
   background: var(--color-surface);
   border-radius: 6px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  width: 500px;
+  width: 700px;
   max-width: 90vw;
   max-height: 90vh;
   overflow: hidden;
