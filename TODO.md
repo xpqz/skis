@@ -751,7 +751,7 @@ Serialize issue to JSON matching schema in PLAN.md.
 
 ---
 
-### 4.2 Implement `--json` output for `skis issue list`
+### 4.2 Implement `--json` output for `skis issue list` ✅
 
 Serialize issue list to JSON array.
 
@@ -762,7 +762,7 @@ Serialize issue list to JSON array.
 
 ---
 
-### 4.3 Implement `--json` output for `skis label list`
+### 4.3 Implement `--json` output for `skis label list` ✅
 
 **Acceptance**:
 ```rust
@@ -829,7 +829,7 @@ Display "2 hours ago", "3 days ago" instead of raw timestamps.
 
 ---
 
-### 4.9 Add `ls` alias for `list`
+### 4.9 Add `ls` alias for `list` ✅
 
 `skis issue ls` should work as alias for `skis issue list`.
 
