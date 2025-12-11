@@ -94,6 +94,20 @@ const btnCreateLabel = document.getElementById('btn-create-label');
 
 // ============ Initialization ============
 
+// Configure marked for GitHub-flavored markdown with syntax highlighting
+marked.setOptions({
+  gfm: true,
+  breaks: true,
+  highlight: function(code, lang) {
+    if (lang && hljs.getLanguage(lang)) {
+      try {
+        return hljs.highlight(code, { language: lang }).value;
+      } catch (e) {}
+    }
+    return hljs.highlightAuto(code).value;
+  }
+});
+
 async function init() {
   try {
     const result = await invoke('get_home_dir');
@@ -363,7 +377,13 @@ function renderIssueDetail() {
   detailState.textContent = currentIssue.state;
   detailState.className = `badge badge-state ${currentIssue.state}`;
   detailTimestamps.textContent = formatTimestamps(currentIssue);
-  detailBody.textContent = currentIssue.body || '';
+
+  // Render body as Markdown
+  if (currentIssue.body) {
+    detailBody.innerHTML = marked.parse(currentIssue.body);
+  } else {
+    detailBody.innerHTML = '';
+  }
 
   // Labels
   detailLabels.innerHTML = currentIssue.labels.map(l => renderLabelPill(l)).join('');
@@ -426,7 +446,7 @@ function renderComments(comments) {
   commentsList.innerHTML = comments.map(c => `
     <div class="comment-item">
       <div class="comment-meta">${formatDateTime(c.created_at)}</div>
-      <div class="comment-body">${escapeHtml(c.body)}</div>
+      <div class="comment-body markdown-body">${marked.parse(c.body)}</div>
     </div>
   `).join('');
 }
