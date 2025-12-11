@@ -1,24 +1,228 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SKIS</title>
-  <style>
-    body { font-family: system-ui; padding: 2rem; }
-    #result { margin-top: 1rem; padding: 1rem; background: #f0f0f0; }
-  </style>
+  <title>SKIS - Issue Tracker</title>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h1>SKIS</h1>
-  <button id="btn">Ping Backend</button>
-  <div id="result"></div>
-  <script>
-    const { invoke } = window.__TAURI__.core;
-    document.getElementById('btn').onclick = async () => {
-      const res = await invoke('ping');
-      document.getElementById('result').textContent = JSON.stringify(res, null, 2);
-    };
-  </script>
+  <div class="app">
+    <!-- Header with directory selector and filters -->
+    <header class="header">
+      <div class="header-left">
+        <h1 class="logo">SKIS</h1>
+        <div class="directory-selector">
+          <input type="text" id="directory-path" placeholder="Select directory..." readonly>
+          <button id="btn-browse" class="btn-icon" title="Browse...">📁</button>
+          <button id="btn-init" class="btn-icon" title="Initialize SKIS" style="display: none;">⚡</button>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="filters">
+          <input type="search" id="search-input" placeholder="Search issues...">
+          <select id="filter-state">
+            <option value="">All states</option>
+            <option value="open" selected>Open</option>
+            <option value="closed">Closed</option>
+          </select>
+          <select id="filter-type">
+            <option value="">All types</option>
+            <option value="epic">Epic</option>
+            <option value="task">Task</option>
+            <option value="bug">Bug</option>
+            <option value="request">Request</option>
+          </select>
+          <select id="filter-label">
+            <option value="">All labels</option>
+          </select>
+        </div>
+        <button id="btn-new-issue" class="btn-primary">+ New Issue</button>
+      </div>
+    </header>
+
+    <!-- Main content area with split view -->
+    <main class="main">
+      <!-- Issue list panel (left) -->
+      <aside class="issue-list-panel">
+        <div class="list-header">
+          <span class="issue-count" id="issue-count">0 issues</span>
+          <div class="sort-controls">
+            <select id="sort-by">
+              <option value="updated">Updated</option>
+              <option value="created">Created</option>
+              <option value="id">ID</option>
+            </select>
+            <button id="btn-sort-order" class="btn-icon" title="Toggle sort order">↓</button>
+          </div>
+        </div>
+        <div class="issue-list" id="issue-list">
+          <!-- Issue items will be rendered here -->
+          <div class="empty-state" id="empty-state">
+            <p>No issues found</p>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Issue detail panel (right) -->
+      <section class="issue-detail-panel" id="issue-detail-panel">
+        <div class="detail-empty" id="detail-empty">
+          <p>Select an issue to view details</p>
+        </div>
+        <div class="detail-content" id="detail-content" style="display: none;">
+          <div class="detail-header">
+            <div class="detail-title-row">
+              <span class="issue-id" id="detail-id">#1</span>
+              <h2 class="issue-title" id="detail-title">Issue Title</h2>
+            </div>
+            <div class="detail-actions">
+              <button id="btn-edit" class="btn-secondary" title="Edit">✏️</button>
+              <button id="btn-close" class="btn-secondary" title="Close issue">✓</button>
+              <button id="btn-reopen" class="btn-secondary" title="Reopen issue" style="display: none;">↩</button>
+              <button id="btn-delete" class="btn-secondary btn-danger" title="Delete">🗑</button>
+            </div>
+          </div>
+          <div class="detail-meta">
+            <span class="badge badge-type" id="detail-type">task</span>
+            <span class="badge badge-state" id="detail-state">open</span>
+            <span class="detail-timestamps" id="detail-timestamps">Created: now</span>
+          </div>
+          <div class="detail-labels" id="detail-labels">
+            <!-- Labels will be rendered here -->
+          </div>
+          <div class="detail-body" id="detail-body">
+            <!-- Issue body content -->
+          </div>
+          <div class="detail-links" id="detail-links">
+            <h3>Linked Issues</h3>
+            <div class="linked-issues" id="linked-issues">
+              <!-- Linked issues will be rendered here -->
+            </div>
+            <div class="link-actions">
+              <input type="number" id="link-issue-id" placeholder="Issue #" min="1">
+              <button id="btn-link" class="btn-secondary">Link</button>
+            </div>
+          </div>
+          <div class="detail-comments" id="detail-comments">
+            <h3>Comments</h3>
+            <div class="comments-list" id="comments-list">
+              <!-- Comments will be rendered here -->
+            </div>
+            <div class="comment-form">
+              <textarea id="comment-input" placeholder="Add a comment..." rows="2"></textarea>
+              <button id="btn-add-comment" class="btn-primary">Add Comment</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Footer with labels bar -->
+    <footer class="footer">
+      <div class="labels-bar">
+        <span class="labels-title">Labels:</span>
+        <div class="labels-list" id="labels-list">
+          <!-- Labels will be rendered here -->
+        </div>
+        <button id="btn-manage-labels" class="btn-icon" title="Manage labels">⚙️</button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Modal dialog for create/edit -->
+  <div class="modal-overlay" id="modal-overlay" style="display: none;">
+    <div class="modal" id="modal">
+      <div class="modal-header">
+        <h2 id="modal-title">New Issue</h2>
+        <button id="btn-modal-close" class="btn-icon">×</button>
+      </div>
+      <form class="modal-body" id="issue-form">
+        <div class="form-group">
+          <label for="input-title">Title</label>
+          <input type="text" id="input-title" required placeholder="Issue title...">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="input-type">Type</label>
+            <select id="input-type">
+              <option value="task">Task</option>
+              <option value="bug">Bug</option>
+              <option value="epic">Epic</option>
+              <option value="request">Request</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="input-labels">Labels</label>
+            <select id="input-labels" multiple>
+              <!-- Labels will be populated dynamically -->
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="input-body">Description</label>
+          <textarea id="input-body" rows="6" placeholder="Describe the issue..."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="btn-modal-cancel" class="btn-secondary">Cancel</button>
+          <button type="submit" id="btn-modal-save" class="btn-primary">Create Issue</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Close issue dialog -->
+  <div class="modal-overlay" id="close-modal-overlay" style="display: none;">
+    <div class="modal modal-small" id="close-modal">
+      <div class="modal-header">
+        <h2>Close Issue</h2>
+        <button class="btn-icon btn-close-modal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="close-reason">Reason</label>
+          <select id="close-reason">
+            <option value="completed">Completed</option>
+            <option value="not_planned">Not Planned</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="close-comment">Comment (optional)</label>
+          <textarea id="close-comment" rows="3" placeholder="Add a closing comment..."></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary btn-close-modal">Cancel</button>
+          <button type="button" id="btn-confirm-close" class="btn-primary">Close Issue</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Label management dialog -->
+  <div class="modal-overlay" id="labels-modal-overlay" style="display: none;">
+    <div class="modal" id="labels-modal">
+      <div class="modal-header">
+        <h2>Manage Labels</h2>
+        <button class="btn-icon btn-close-labels-modal">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="labels-management">
+          <div class="existing-labels" id="existing-labels">
+            <!-- Existing labels list -->
+          </div>
+          <div class="new-label-form">
+            <input type="text" id="new-label-name" placeholder="Label name">
+            <input type="text" id="new-label-color" placeholder="Color (hex)" maxlength="6">
+            <input type="text" id="new-label-desc" placeholder="Description (optional)">
+            <button type="button" id="btn-create-label" class="btn-primary">Add</button>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary btn-close-labels-modal">Done</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="main.js"></script>
 </body>
 </html>
