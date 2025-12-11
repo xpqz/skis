@@ -11,6 +11,34 @@ pub struct Label {
     pub color: Option<String>,
 }
 
+/// Label view for JSON output (without internal id, per PLAN.md schema)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LabelView {
+    pub name: String,
+    pub color: Option<String>,
+    pub description: Option<String>,
+}
+
+impl From<Label> for LabelView {
+    fn from(label: Label) -> Self {
+        Self {
+            name: label.name,
+            color: label.color,
+            description: label.description,
+        }
+    }
+}
+
+impl From<&Label> for LabelView {
+    fn from(label: &Label) -> Self {
+        Self {
+            name: label.name.clone(),
+            color: label.color.clone(),
+            description: label.description.clone(),
+        }
+    }
+}
+
 /// Validate a hex color string (6 characters, no # prefix)
 #[allow(dead_code)] // Will be used in label creation
 pub fn validate_color(color: &str) -> Result<()> {

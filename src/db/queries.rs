@@ -212,17 +212,38 @@ pub fn list_issues(conn: &Connection, filter: &IssueFilter) -> Result<Vec<Issue>
 
 /// Close an issue with a reason
 pub fn close_issue(conn: &Connection, id: i64, reason: StateReason) -> Result<Issue> {
+    close_issue_with_comment(conn, id, reason, None)
+}
+
+/// Close an issue with an optional comment (atomic operation)
+pub fn close_issue_with_comment(
+    conn: &Connection,
+    id: i64,
+    reason: StateReason,
+    comment: Option<&str>,
+) -> Result<Issue> {
     let issue = get_issue(conn, id)?.ok_or(Error::IssueNotFound(id))?;
 
     if issue.state == IssueState::Closed {
         return Err(Error::InvalidStateTransition(id, "closed".to_string()));
     }
 
-    conn.execute(
+    let tx = conn.unchecked_transaction()?;
+
+    tx.execute(
         "UPDATE issues SET state = 'closed', state_reason = ?1, closed_at = datetime('now')
          WHERE id = ?2",
         params![reason.to_string(), id],
     )?;
+
+    if let Some(body) = comment {
+        tx.execute(
+            "INSERT INTO comments (issue_id, body) VALUES (?1, ?2)",
+            params![id, body],
+        )?;
+    }
+
+    tx.commit()?;
 
     get_issue(conn, id)?.ok_or(Error::IssueNotFound(id))
 }

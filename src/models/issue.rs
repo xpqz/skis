@@ -203,7 +203,7 @@ pub struct IssueView {
     pub issue_type: IssueType,
     pub state: IssueState,
     pub state_reason: Option<StateReason>,
-    pub labels: Vec<super::Label>,
+    pub labels: Vec<super::LabelView>,
     pub linked_issues: Vec<LinkedIssueRef>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,

@@ -172,7 +172,7 @@ pub struct IssueCloseArgs {
     pub reason: String,
 
     /// Add a comment when closing
-    #[arg(short = 'C', long)]
+    #[arg(short = 'c', long)]
     pub comment: Option<String>,
 }
 

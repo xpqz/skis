@@ -165,7 +165,7 @@ pub fn view(args: IssueViewArgs) -> Result<()> {
             issue_type: issue.issue_type,
             state: issue.state,
             state_reason: issue.state_reason,
-            labels,
+            labels: labels.into_iter().map(Into::into).collect(),
             linked_issues,
             created_at: issue.created_at,
             updated_at: issue.updated_at,
@@ -263,12 +263,12 @@ pub fn edit(args: IssueEditArgs) -> Result<()> {
 pub fn close(args: IssueCloseArgs) -> Result<()> {
     let db = SkisDb::open()?;
     let reason = StateReason::from_str(&args.reason)?;
-    let issue = db::close_issue(db.conn(), args.number, reason)?;
-
-    // Add comment if provided
-    if let Some(comment_body) = &args.comment {
-        db::add_comment(db.conn(), args.number, comment_body)?;
-    }
+    let issue = db::close_issue_with_comment(
+        db.conn(),
+        args.number,
+        reason,
+        args.comment.as_deref(),
+    )?;
 
     println!("Closed issue #{} as {}", issue.id, args.reason);
     Ok(())
