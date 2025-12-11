@@ -291,10 +291,13 @@ function renderIssueList() {
 
 async function selectIssue(id) {
   const issue = issues.find(i => i.id === id);
-  if (!issue) return;
 
-  currentIssue = issue;
-  renderIssueList(); // Update selection
+  if (issue) {
+    currentIssue = issue;
+    renderIssueList(); // Update selection
+  }
+
+  // Always load the detail - even if not in current filtered list
   await loadIssueDetail(id);
 }
 
