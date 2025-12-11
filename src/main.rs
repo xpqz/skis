@@ -144,6 +144,14 @@ pub struct IssueEditArgs {
     /// Change issue type
     #[arg(short = 'T', long = "type")]
     pub issue_type: Option<String>,
+
+    /// Add label(s), can be repeated
+    #[arg(long = "add-label", action = clap::ArgAction::Append)]
+    pub add_labels: Vec<String>,
+
+    /// Remove label(s), can be repeated
+    #[arg(long = "remove-label", action = clap::ArgAction::Append)]
+    pub remove_labels: Vec<String>,
 }
 
 #[derive(Args)]

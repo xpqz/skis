@@ -103,14 +103,21 @@ pub fn list(args: IssueListArgs) -> Result<()> {
         println!("No issues found");
     } else {
         // Simple table output for now
-        println!("{:<6} {:<8} {:<8} {}", "ID", "TYPE", "STATE", "TITLE");
-        println!("{}", "-".repeat(60));
-        for issue in issues {
+        println!("{:<6} {:<8} {:<8} {:<20} {}", "ID", "TYPE", "STATE", "LABELS", "TITLE");
+        println!("{}", "-".repeat(80));
+        for issue in &issues {
+            let labels = db::get_issue_labels(db.conn(), issue.id)?;
+            let label_str = if labels.is_empty() {
+                "-".to_string()
+            } else {
+                labels.iter().map(|l| l.name.as_str()).collect::<Vec<_>>().join(",")
+            };
             println!(
-                "{:<6} {:<8} {:<8} {}",
+                "{:<6} {:<8} {:<8} {:<20} {}",
                 format!("#{}", issue.id),
                 issue.issue_type,
                 issue.state,
+                label_str,
                 issue.title
             );
         }
@@ -145,6 +152,13 @@ fn print_issue_view(
     }
     println!("Created: {}", issue.created_at);
     println!("Updated: {}", issue.updated_at);
+
+    // Show labels
+    let labels = db::get_issue_labels(conn, issue.id)?;
+    if !labels.is_empty() {
+        let label_names: Vec<&str> = labels.iter().map(|l| l.name.as_str()).collect();
+        println!("Labels: {}", label_names.join(", "));
+    }
 
     // Show linked issues
     let linked = db::get_linked_issues(conn, issue.id)?;
@@ -189,6 +203,17 @@ pub fn edit(args: IssueEditArgs) -> Result<()> {
     };
 
     let issue = db::update_issue(db.conn(), args.number, &update)?;
+
+    // Handle label additions
+    for label in &args.add_labels {
+        db::add_label_to_issue(db.conn(), args.number, label)?;
+    }
+
+    // Handle label removals
+    for label in &args.remove_labels {
+        db::remove_label_from_issue(db.conn(), args.number, label)?;
+    }
+
     println!("Updated issue #{}", issue.id);
     Ok(())
 }

@@ -5,8 +5,8 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::error::{Error, Result};
 use crate::models::{
-    Comment, Issue, IssueCreate, IssueFilter, IssueState, IssueType, IssueUpdate, SortField,
-    SortOrder, StateReason,
+    validate_color, Comment, Issue, IssueCreate, IssueFilter, IssueState, IssueType, IssueUpdate,
+    Label, SortField, SortOrder, StateReason,
 };
 
 /// Create a new issue with optional labels
@@ -509,6 +509,133 @@ pub fn get_linked_issues(conn: &Connection, issue_id: i64) -> Result<Vec<i64>> {
         .collect::<std::result::Result<Vec<i64>, _>>()?;
 
     Ok(ids)
+}
+
+// Phase 3: Label operations
+
+/// Create a new label
+pub fn create_label(
+    conn: &Connection,
+    name: &str,
+    description: Option<&str>,
+    color: Option<&str>,
+) -> Result<Label> {
+    // Validate color if provided
+    if let Some(c) = color {
+        validate_color(c)?;
+    }
+
+    conn.execute(
+        "INSERT INTO labels (name, description, color) VALUES (?1, ?2, ?3)",
+        params![name, description, color],
+    )?;
+
+    let label_id = conn.last_insert_rowid();
+
+    conn.query_row(
+        "SELECT id, name, description, color FROM labels WHERE id = ?1",
+        [label_id],
+        |row| {
+            Ok(Label {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                color: row.get(3)?,
+            })
+        },
+    )
+    .map_err(Error::from)
+}
+
+/// List all labels
+pub fn list_labels(conn: &Connection) -> Result<Vec<Label>> {
+    let mut stmt = conn.prepare("SELECT id, name, description, color FROM labels ORDER BY name")?;
+
+    let labels = stmt
+        .query_map([], |row| {
+            Ok(Label {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                color: row.get(3)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    Ok(labels)
+}
+
+/// Delete a label by name (case-insensitive)
+pub fn delete_label(conn: &Connection, name: &str) -> Result<()> {
+    let rows = conn.execute(
+        "DELETE FROM labels WHERE name = ?1 COLLATE NOCASE",
+        [name],
+    )?;
+
+    if rows == 0 {
+        return Err(Error::LabelNotFound(name.to_string()));
+    }
+
+    Ok(())
+}
+
+/// Add a label to an issue (idempotent)
+pub fn add_label_to_issue(conn: &Connection, issue_id: i64, label_name: &str) -> Result<()> {
+    // Check if label exists
+    let label_id: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM labels WHERE name = ?1 COLLATE NOCASE",
+            [label_name],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    let label_id = label_id.ok_or_else(|| Error::LabelNotFound(label_name.to_string()))?;
+
+    // Insert if not already present (idempotent)
+    conn.execute(
+        "INSERT OR IGNORE INTO issue_labels (issue_id, label_id) VALUES (?1, ?2)",
+        params![issue_id, label_id],
+    )?;
+
+    Ok(())
+}
+
+/// Remove a label from an issue (idempotent)
+pub fn remove_label_from_issue(conn: &Connection, issue_id: i64, label_name: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM issue_labels
+         WHERE issue_id = ?1 AND label_id = (
+             SELECT id FROM labels WHERE name = ?2 COLLATE NOCASE
+         )",
+        params![issue_id, label_name],
+    )?;
+
+    Ok(())
+}
+
+/// Get all labels for an issue
+pub fn get_issue_labels(conn: &Connection, issue_id: i64) -> Result<Vec<Label>> {
+    let mut stmt = conn.prepare(
+        "SELECT l.id, l.name, l.description, l.color
+         FROM labels l
+         JOIN issue_labels il ON l.id = il.label_id
+         WHERE il.issue_id = ?1
+         ORDER BY l.name",
+    )?;
+
+    let labels = stmt
+        .query_map([issue_id], |row| {
+            Ok(Label {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                color: row.get(3)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+
+    Ok(labels)
 }
 
 // Helper functions for parsing database values
@@ -1749,5 +1876,248 @@ mod tests {
         // Should still be able to link to deleted issue
         let result = add_link(db.conn(), issue1.id, issue2.id);
         assert!(result.is_ok());
+    }
+
+    // Phase 3: Label tests
+
+    #[test]
+    fn create_label_with_all_fields() {
+        let (db, _dir) = test_db();
+
+        let label = create_label(db.conn(), "bug", Some("Bug reports"), Some("d73a4a")).unwrap();
+
+        assert_eq!(label.name, "bug");
+        assert_eq!(label.description, Some("Bug reports".to_string()));
+        assert_eq!(label.color, Some("d73a4a".to_string()));
+        assert!(label.id > 0);
+    }
+
+    #[test]
+    fn create_label_name_only() {
+        let (db, _dir) = test_db();
+
+        let label = create_label(db.conn(), "enhancement", None, None).unwrap();
+
+        assert_eq!(label.name, "enhancement");
+        assert_eq!(label.description, None);
+        assert_eq!(label.color, None);
+    }
+
+    #[test]
+    fn create_label_invalid_color_errors() {
+        let (db, _dir) = test_db();
+
+        let result = create_label(db.conn(), "test", None, Some("invalid"));
+        assert!(result.is_err());
+
+        let result = create_label(db.conn(), "test", None, Some("#ff0000"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn create_label_duplicate_name_errors() {
+        let (db, _dir) = test_db();
+
+        create_label(db.conn(), "bug", None, None).unwrap();
+        let result = create_label(db.conn(), "bug", None, None);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn create_label_duplicate_name_different_case_errors() {
+        let (db, _dir) = test_db();
+
+        create_label(db.conn(), "bug", None, None).unwrap();
+        let result = create_label(db.conn(), "BUG", None, None);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn list_labels_returns_all() {
+        let (db, _dir) = test_db();
+
+        create_label(db.conn(), "bug", None, None).unwrap();
+        create_label(db.conn(), "enhancement", None, None).unwrap();
+        create_label(db.conn(), "docs", None, None).unwrap();
+
+        let labels = list_labels(db.conn()).unwrap();
+
+        assert_eq!(labels.len(), 3);
+        let names: Vec<&str> = labels.iter().map(|l| l.name.as_str()).collect();
+        assert!(names.contains(&"bug"));
+        assert!(names.contains(&"enhancement"));
+        assert!(names.contains(&"docs"));
+    }
+
+    #[test]
+    fn delete_label_by_name() {
+        let (db, _dir) = test_db();
+
+        create_label(db.conn(), "bug", None, None).unwrap();
+        delete_label(db.conn(), "bug").unwrap();
+
+        let labels = list_labels(db.conn()).unwrap();
+        assert!(labels.is_empty());
+    }
+
+    #[test]
+    fn delete_label_case_insensitive() {
+        let (db, _dir) = test_db();
+
+        create_label(db.conn(), "bug", None, None).unwrap();
+        delete_label(db.conn(), "BUG").unwrap();
+
+        let labels = list_labels(db.conn()).unwrap();
+        assert!(labels.is_empty());
+    }
+
+    #[test]
+    fn delete_label_nonexistent_errors() {
+        let (db, _dir) = test_db();
+
+        let result = delete_label(db.conn(), "nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn add_label_to_issue_test() {
+        let (db, _dir) = test_db();
+
+        create_label(db.conn(), "bug", None, None).unwrap();
+        let issue = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Test".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        add_label_to_issue(db.conn(), issue.id, "bug").unwrap();
+
+        let labels = get_issue_labels(db.conn(), issue.id).unwrap();
+        assert_eq!(labels.len(), 1);
+        assert_eq!(labels[0].name, "bug");
+    }
+
+    #[test]
+    fn add_nonexistent_label_errors() {
+        let (db, _dir) = test_db();
+
+        let issue = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Test".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let result = add_label_to_issue(db.conn(), issue.id, "nonexistent");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn add_duplicate_label_is_idempotent() {
+        let (db, _dir) = test_db();
+
+        create_label(db.conn(), "bug", None, None).unwrap();
+        let issue = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Test".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        add_label_to_issue(db.conn(), issue.id, "bug").unwrap();
+        // Adding again should succeed (idempotent)
+        add_label_to_issue(db.conn(), issue.id, "bug").unwrap();
+
+        let labels = get_issue_labels(db.conn(), issue.id).unwrap();
+        assert_eq!(labels.len(), 1);
+    }
+
+    #[test]
+    fn remove_label_from_issue_test() {
+        let (db, _dir) = test_db();
+
+        create_label(db.conn(), "bug", None, None).unwrap();
+        let issue = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Test".to_string(),
+                labels: vec!["bug".to_string()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        remove_label_from_issue(db.conn(), issue.id, "bug").unwrap();
+
+        let labels = get_issue_labels(db.conn(), issue.id).unwrap();
+        assert!(labels.is_empty());
+    }
+
+    #[test]
+    fn remove_nonexistent_label_is_idempotent() {
+        let (db, _dir) = test_db();
+
+        let issue = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Test".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        // Removing a label that's not on the issue should succeed (idempotent)
+        let result = remove_label_from_issue(db.conn(), issue.id, "nonexistent");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn get_issue_labels_returns_all() {
+        let (db, _dir) = test_db();
+
+        create_label(db.conn(), "bug", None, None).unwrap();
+        create_label(db.conn(), "urgent", None, None).unwrap();
+        let issue = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Test".to_string(),
+                labels: vec!["bug".to_string(), "urgent".to_string()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let labels = get_issue_labels(db.conn(), issue.id).unwrap();
+
+        assert_eq!(labels.len(), 2);
+        let names: Vec<&str> = labels.iter().map(|l| l.name.as_str()).collect();
+        assert!(names.contains(&"bug"));
+        assert!(names.contains(&"urgent"));
+    }
+
+    #[test]
+    fn get_issue_labels_empty() {
+        let (db, _dir) = test_db();
+
+        let issue = create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Test".to_string(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let labels = get_issue_labels(db.conn(), issue.id).unwrap();
+        assert!(labels.is_empty());
     }
 }

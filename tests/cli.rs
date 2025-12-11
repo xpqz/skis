@@ -434,29 +434,6 @@ fn cli_issue_restore_appears_in_list() {
         .stdout(predicate::str::contains("Restore me"));
 }
 
-// Unimplemented commands should fail
-
-#[test]
-fn cli_unimplemented_commands_return_error() {
-    let dir = TempDir::new().unwrap();
-    skis().arg("init").current_dir(dir.path()).assert().success();
-
-    // label commands are not implemented
-    skis()
-        .args(["label", "list"])
-        .current_dir(dir.path())
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("not yet implemented"));
-
-    skis()
-        .args(["label", "create", "bug"])
-        .current_dir(dir.path())
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("not yet implemented"));
-}
-
 // Sort and order flags
 
 #[test]
@@ -790,4 +767,258 @@ fn cli_issue_view_shows_links() {
         .assert()
         .success()
         .stdout(predicate::str::contains("#2"));
+}
+
+// Phase 3: Label CLI tests
+
+#[test]
+fn cli_label_create() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["label", "create", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created label"));
+}
+
+#[test]
+fn cli_label_create_with_color() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["label", "create", "bug", "--color", "d73a4a"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created label"));
+}
+
+#[test]
+fn cli_label_create_invalid_color_shows_error() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["label", "create", "bug", "--color", "invalid"])
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Invalid color"));
+}
+
+#[test]
+fn cli_label_list() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["label", "create", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["label", "create", "enhancement"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["label", "list"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bug"))
+        .stdout(predicate::str::contains("enhancement"));
+}
+
+#[test]
+fn cli_label_list_empty() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["label", "list"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("No labels"));
+}
+
+#[test]
+fn cli_label_delete_with_yes() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["label", "create", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["label", "delete", "bug", "--yes"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Deleted label"));
+}
+
+// Phase 3: Issue edit with labels
+
+#[test]
+fn cli_issue_edit_add_label() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["label", "create", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "create", "--title", "Test"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "edit", "1", "--add-label", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "view", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bug"));
+}
+
+#[test]
+fn cli_issue_edit_remove_label() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["label", "create", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "create", "--title", "Test", "--label", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "edit", "1", "--remove-label", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // Label should no longer appear
+    skis()
+        .args(["issue", "view", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Labels:").not());
+}
+
+#[test]
+fn cli_issue_edit_add_and_remove_labels() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["label", "create", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["label", "create", "enhancement"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "create", "--title", "Test", "--label", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "edit", "1", "--remove-label", "bug", "--add-label", "enhancement"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "view", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("enhancement"))
+        .stdout(predicate::str::contains("bug").not().or(predicate::str::contains("Labels: enhancement")));
+}
+
+// Phase 3: Show labels in view and list
+
+#[test]
+fn cli_issue_view_shows_labels() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["label", "create", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "create", "--title", "Test", "--label", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "view", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bug"));
+}
+
+#[test]
+fn cli_issue_list_shows_labels() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["label", "create", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "create", "--title", "Test", "--label", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "list"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("bug"));
 }

@@ -619,9 +619,9 @@ Display linked issues in view output.
 
 ---
 
-## Phase 3: Labels
+## Phase 3: Labels ✅
 
-### 3.1 Implement `create_label()`
+### 3.1 Implement `create_label()` ✅
 
 - Validate color format (6 hex chars, no #)
 - Insert with case-insensitive name
@@ -637,7 +637,7 @@ Display linked issues in view output.
 
 ---
 
-### 3.2 Implement `list_labels()` and `delete_label()`
+### 3.2 Implement `list_labels()` and `delete_label()` ✅
 
 - `list_labels()` - Return all labels
 - `delete_label(name)` - Delete by name (case-insensitive)
@@ -652,7 +652,7 @@ Display linked issues in view output.
 
 ---
 
-### 3.3 Implement `skis label create` command
+### 3.3 Implement `skis label create` command ✅
 
 Argument: `<NAME>`, Options: `-d/--description`, `-c/--color`
 
@@ -665,7 +665,7 @@ Argument: `<NAME>`, Options: `-d/--description`, `-c/--color`
 
 ---
 
-### 3.4 Implement `skis label list` command
+### 3.4 Implement `skis label list` command ✅
 
 **Acceptance**:
 ```rust
@@ -675,7 +675,7 @@ Argument: `<NAME>`, Options: `-d/--description`, `-c/--color`
 
 ---
 
-### 3.5 Implement `skis label delete` command
+### 3.5 Implement `skis label delete` command ✅
 
 Argument: `<NAME>`, Options: `--yes`
 
@@ -686,7 +686,7 @@ Argument: `<NAME>`, Options: `--yes`
 
 ---
 
-### 3.6 Implement `add_label_to_issue()` and `remove_label_from_issue()`
+### 3.6 Implement `add_label_to_issue()` and `remove_label_from_issue()` ✅
 
 - Used by `skis issue edit --add-label` and `--remove-label`
 
@@ -701,7 +701,7 @@ Argument: `<NAME>`, Options: `--yes`
 
 ---
 
-### 3.7 Implement `skis issue edit --add-label` and `--remove-label`
+### 3.7 Implement `skis issue edit --add-label` and `--remove-label` ✅
 
 Options: `--add-label <LABEL>` (repeatable), `--remove-label <LABEL>` (repeatable)
 
@@ -714,7 +714,7 @@ Options: `--add-label <LABEL>` (repeatable), `--remove-label <LABEL>` (repeatabl
 
 ---
 
-### 3.8 Implement `get_issue_labels()`
+### 3.8 Implement `get_issue_labels()` ✅
 
 Return labels for an issue (used in view output).
 
@@ -726,7 +726,7 @@ Return labels for an issue (used in view output).
 
 ---
 
-### 3.9 Show labels in `skis issue view` and `skis issue list`
+### 3.9 Show labels in `skis issue view` and `skis issue list` ✅
 
 **Acceptance**:
 ```rust
