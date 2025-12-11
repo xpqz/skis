@@ -129,7 +129,7 @@ pub fn set_issue_timestamps(...) { ... }
 
 ---
 
-## Phase 1: Core Foundation (In Progress)
+## Phase 1: Core Foundation ✅
 
 ### 1.1 Implement repository discovery ✅
 
@@ -344,7 +344,7 @@ Implement `FromStr` for enums, `Default` for filter/create structs, `Serialize` 
 
 ---
 
-### 1.11 Implement CLI skeleton with clap
+### 1.11 Implement CLI skeleton with clap ✅
 
 In `src/main.rs`, define CLI structure:
 
@@ -360,7 +360,7 @@ Parse arguments but don't implement handlers yet (just print "not implemented").
 
 ---
 
-### 1.12 Implement `skis init` command
+### 1.12 Implement `skis init` command ✅
 
 - Call `SkisDb::init()` in current directory
 - Print success message
@@ -375,7 +375,7 @@ Parse arguments but don't implement handlers yet (just print "not implemented").
 
 ---
 
-### 1.13 Implement `skis issue create` command
+### 1.13 Implement `skis issue create` command ✅
 
 Options: `-t/--title`, `-b/--body`, `-T/--type`, `-l/--label` (repeatable)
 
@@ -393,7 +393,7 @@ Options: `-t/--title`, `-b/--body`, `-T/--type`, `-l/--label` (repeatable)
 
 ---
 
-### 1.14 Implement `skis issue list` command
+### 1.14 Implement `skis issue list` command ✅
 
 Options: `-s/--state`, `-T/--type`, `-l/--label`, `--sort`, `--order`, `-L/--limit`, `--offset`, `--deleted`
 
@@ -410,7 +410,7 @@ Options: `-s/--state`, `-T/--type`, `-l/--label`, `--sort`, `--order`, `-L/--lim
 
 ---
 
-### 1.15 Implement `skis issue view` command
+### 1.15 Implement `skis issue view` command ✅
 
 Argument: `<NUMBER>`
 
@@ -426,7 +426,7 @@ Argument: `<NUMBER>`
 
 ---
 
-### 1.16 Implement `skis issue close` command
+### 1.16 Implement `skis issue close` command ✅
 
 Argument: `<NUMBER>`, Options: `-r/--reason`
 
@@ -439,7 +439,7 @@ Argument: `<NUMBER>`, Options: `-r/--reason`
 
 ---
 
-### 1.17 Implement `skis issue reopen` command
+### 1.17 Implement `skis issue reopen` command ✅
 
 Argument: `<NUMBER>`
 
@@ -451,7 +451,7 @@ Argument: `<NUMBER>`
 
 ---
 
-### 1.18 Implement `skis issue delete` command
+### 1.18 Implement `skis issue delete` command ✅
 
 Argument: `<NUMBER>`, Options: `--yes`
 
@@ -466,7 +466,7 @@ Argument: `<NUMBER>`, Options: `--yes`
 
 ---
 
-### 1.19 Implement `skis issue restore` command
+### 1.19 Implement `skis issue restore` command ✅
 
 Argument: `<NUMBER>`
 
