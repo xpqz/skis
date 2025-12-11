@@ -33,10 +33,10 @@ pub fn create_issue(conn: &Connection, create: &IssueCreate) -> Result<Issue> {
 
     let issue_id = tx.last_insert_rowid();
 
-    // Add labels
+    // Add labels (use INSERT OR IGNORE to handle duplicates from user input)
     for label_name in &create.labels {
         tx.execute(
-            "INSERT INTO issue_labels (issue_id, label_id)
+            "INSERT OR IGNORE INTO issue_labels (issue_id, label_id)
              SELECT ?1, id FROM labels WHERE name = ?2 COLLATE NOCASE",
             params![issue_id, label_name],
         )?;
@@ -124,33 +124,40 @@ pub fn list_issues(conn: &Connection, filter: &IssueFilter) -> Result<Vec<Issue>
     }
 
     // For multiple label filtering with AND logic, we need to ensure the issue has ALL labels
+    // Dedup labels case-insensitively to avoid count mismatches
     if filter.labels.len() > 1 {
+        let mut seen = std::collections::HashSet::new();
+        let deduped_labels: Vec<&String> = filter
+            .labels
+            .iter()
+            .filter(|l| seen.insert(l.to_lowercase()))
+            .collect();
+
         sql = format!(
             "SELECT id, title, body, type, state, state_reason, created_at, updated_at, closed_at, deleted_at
              FROM issues i
              WHERE {}
-             AND (SELECT COUNT(DISTINCT l.name) FROM issue_labels il
+             AND (SELECT COUNT(DISTINCT l.name COLLATE NOCASE) FROM issue_labels il
                   INNER JOIN labels l ON il.label_id = l.id
-                  WHERE il.issue_id = i.id AND l.name IN ({})) = ?{}",
+                  WHERE il.issue_id = i.id AND l.name IN ({}) COLLATE NOCASE) = ?{}",
             if filter.include_deleted {
                 "1=1"
             } else {
                 "i.deleted_at IS NULL"
             },
-            filter
-                .labels
+            deduped_labels
                 .iter()
                 .enumerate()
                 .map(|(i, _)| format!("?{}", i + 1))
                 .collect::<Vec<_>>()
                 .join(", "),
-            filter.labels.len() + 1
+            deduped_labels.len() + 1
         );
         params.clear();
-        for label in &filter.labels {
-            params.push(Box::new(label.clone()));
+        for label in &deduped_labels {
+            params.push(Box::new((*label).clone()));
         }
-        params.push(Box::new(filter.labels.len() as i64));
+        params.push(Box::new(deduped_labels.len() as i64));
 
         // Re-add state filter
         if let Some(state) = &filter.state {
@@ -1035,6 +1042,95 @@ mod tests {
         let issues = list_issues(db.conn(), &filter).unwrap();
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].title, "Both labels");
+    }
+
+    #[test]
+    fn create_issue_with_duplicate_labels_is_idempotent() {
+        let (db, _dir) = test_db();
+
+        db.conn()
+            .execute("INSERT INTO labels (name) VALUES ('bug')", [])
+            .unwrap();
+
+        // Create issue with same label specified twice
+        let create = IssueCreate {
+            title: "Duplicate labels".to_string(),
+            labels: vec!["bug".to_string(), "bug".to_string()],
+            ..Default::default()
+        };
+
+        let issue = create_issue(db.conn(), &create).unwrap();
+
+        // Should only have one label attachment
+        let count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM issue_labels WHERE issue_id = ?1",
+                [issue.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn create_issue_with_duplicate_labels_different_case() {
+        let (db, _dir) = test_db();
+
+        db.conn()
+            .execute("INSERT INTO labels (name) VALUES ('Bug')", [])
+            .unwrap();
+
+        // Create issue with same label in different cases
+        let create = IssueCreate {
+            title: "Case duplicate".to_string(),
+            labels: vec!["bug".to_string(), "BUG".to_string(), "Bug".to_string()],
+            ..Default::default()
+        };
+
+        let issue = create_issue(db.conn(), &create).unwrap();
+
+        // Should only have one label attachment
+        let count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM issue_labels WHERE issue_id = ?1",
+                [issue.id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn list_filter_with_duplicate_labels_case_insensitive() {
+        let (db, _dir) = test_db();
+
+        db.conn()
+            .execute("INSERT INTO labels (name) VALUES ('bug')", [])
+            .unwrap();
+        db.conn()
+            .execute("INSERT INTO labels (name) VALUES ('feature')", [])
+            .unwrap();
+
+        create_issue(
+            db.conn(),
+            &IssueCreate {
+                title: "Has both".to_string(),
+                labels: vec!["bug".to_string(), "feature".to_string()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        // Filter with duplicate labels in different cases should still find the issue
+        let filter = IssueFilter {
+            labels: vec!["bug".to_string(), "BUG".to_string(), "feature".to_string()],
+            ..Default::default()
+        };
+        let issues = list_issues(db.conn(), &filter).unwrap();
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].title, "Has both");
     }
 
     #[test]

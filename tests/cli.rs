@@ -134,6 +134,40 @@ fn cli_issue_create_with_all_options() {
         .stdout(predicate::str::contains("Created issue #1"));
 }
 
+#[test]
+fn cli_issue_create_with_duplicate_labels() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    // Create label first
+    skis()
+        .args(["label", "create", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // Create issue with same label twice (should not error)
+    skis()
+        .args([
+            "issue", "create",
+            "--title", "Duplicate label test",
+            "--label", "bug",
+            "--label", "bug",
+        ])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Created issue #1"));
+
+    // Verify issue has label (only once)
+    skis()
+        .args(["issue", "view", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Labels: bug"));
+}
+
 // Task 1.14: issue list tests
 
 #[test]
@@ -967,8 +1001,8 @@ fn cli_issue_edit_add_and_remove_labels() {
         .current_dir(dir.path())
         .assert()
         .success()
-        .stdout(predicate::str::contains("enhancement"))
-        .stdout(predicate::str::contains("bug").not().or(predicate::str::contains("Labels: enhancement")));
+        .stdout(predicate::str::contains("Labels: enhancement"))
+        .stdout(predicate::str::contains("bug").not());
 }
 
 // Phase 3: Show labels in view and list
