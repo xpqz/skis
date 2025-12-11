@@ -5,7 +5,8 @@ use ski::{
 };
 use std::path::PathBuf;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::{AppHandle, Emitter, State};
 
 // Application state holding the database connection
 pub struct AppState {
@@ -542,6 +543,80 @@ fn unlink_issues(state: State<AppState>, issue_a: i64, issue_b: i64) -> Response
     })
 }
 
+// ============ Menu Commands ============
+
+#[tauri::command]
+fn update_recent_menu(app: AppHandle, paths: Vec<String>) -> Response<()> {
+    if let Err(e) = rebuild_menu(&app, &paths) {
+        return Response::err(e.to_string());
+    }
+    Response::ok(())
+}
+
+fn rebuild_menu(app: &AppHandle, recent_paths: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    // Build "Open Recent" submenu
+    let mut recent_submenu = SubmenuBuilder::new(app, "Open Recent");
+
+    if recent_paths.is_empty() {
+        recent_submenu = recent_submenu.item(
+            &MenuItemBuilder::new("No Recent Items")
+                .enabled(false)
+                .build(app)?,
+        );
+    } else {
+        for path in recent_paths {
+            // Use last component of path as label, full path as id
+            let label = PathBuf::from(path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.clone());
+
+            let item = MenuItemBuilder::new(&label)
+                .id(format!("recent:{}", path))
+                .build(app)?;
+            recent_submenu = recent_submenu.item(&item);
+        }
+    }
+
+    // Build File menu
+    let file_menu = SubmenuBuilder::new(app, "File")
+        .item(
+            &MenuItemBuilder::new("Open...")
+                .id("open")
+                .accelerator("CmdOrCtrl+O")
+                .build(app)?,
+        )
+        .item(&recent_submenu.build()?)
+        .separator()
+        .item(
+            &MenuItemBuilder::new("New Issue")
+                .id("new-issue")
+                .accelerator("CmdOrCtrl+N")
+                .build(app)?,
+        )
+        .build()?;
+
+    // Build Edit menu
+    let edit_menu = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .build()?;
+
+    // Build full menu
+    let menu = MenuBuilder::new(app)
+        .item(&file_menu)
+        .item(&edit_menu)
+        .build()?;
+
+    app.set_menu(menu)?;
+    Ok(())
+}
+
 // ============ App Entry Point ============
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -550,6 +625,19 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(AppState::default())
+        .setup(|app| {
+            // Build initial menu with empty recent list
+            rebuild_menu(app.handle(), &[])?;
+            Ok(())
+        })
+        .on_menu_event(|app, event| {
+            let id = event.id().as_ref();
+            if id == "open" {
+                let _ = app.emit("menu-open", ());
+            } else if let Some(path) = id.strip_prefix("recent:") {
+                let _ = app.emit("menu-open-recent", path);
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             // Directory
             get_current_dir,
@@ -577,6 +665,8 @@ pub fn run() {
             // Links
             link_issues,
             unlink_issues,
+            // Menu
+            update_recent_menu,
         ])
         .run(tauri::generate_context!())
         .expect("error running SKIS GUI");

@@ -1,6 +1,12 @@
 // SKIS GUI - Main JavaScript
 const { invoke } = window.__TAURI__.core;
 const { open } = window.__TAURI__.dialog;
+const { listen } = window.__TAURI__.event;
+
+// ============ Constants ============
+
+const MAX_RECENT_DIRS = 10;
+const STORAGE_RECENT_DIRS = 'skis_recent_directories';
 
 // ============ State ============
 
@@ -10,6 +16,7 @@ let labels = [];
 let sortOrder = 'desc';
 let editingIssueId = null;
 let homeDir = '';
+let recentDirectories = [];
 
 // ============ DOM Elements ============
 
@@ -96,6 +103,24 @@ async function init() {
   } catch (e) {
     console.error('Could not get home dir:', e);
   }
+
+  // Load recent directories
+  loadRecentDirectories();
+
+  // Update menu with recent directories
+  await updateRecentMenu();
+
+  // Listen for menu events
+  await listen('menu-open-recent', async (event) => {
+    const path = event.payload;
+    if (path) {
+      await selectDirectory(path);
+    }
+  });
+
+  await listen('menu-open', async () => {
+    await browseDirectory();
+  });
 
   // Check for saved directory
   const savedDir = localStorage.getItem('skis_directory');
@@ -194,6 +219,9 @@ async function selectDirectory(path) {
     if (result.ok) {
       directoryPath.value = shortenPath(path);
       localStorage.setItem('skis_directory', path);
+
+      // Add to recent directories
+      addRecentDirectory(path);
 
       if (result.data.initialized) {
         btnInit.style.display = 'none';
@@ -778,6 +806,41 @@ function debounce(fn, delay) {
     clearTimeout(timeout);
     timeout = setTimeout(() => fn(...args), delay);
   };
+}
+
+// ============ Recent Directories ============
+
+function loadRecentDirectories() {
+  try {
+    const stored = localStorage.getItem(STORAGE_RECENT_DIRS);
+    recentDirectories = stored ? JSON.parse(stored) : [];
+  } catch (e) {
+    recentDirectories = [];
+  }
+}
+
+function saveRecentDirectories() {
+  localStorage.setItem(STORAGE_RECENT_DIRS, JSON.stringify(recentDirectories));
+}
+
+function addRecentDirectory(path) {
+  // Remove if already exists
+  recentDirectories = recentDirectories.filter(p => p !== path);
+  // Add to front
+  recentDirectories.unshift(path);
+  // Limit size
+  recentDirectories = recentDirectories.slice(0, MAX_RECENT_DIRS);
+  saveRecentDirectories();
+  // Update menu
+  updateRecentMenu();
+}
+
+async function updateRecentMenu() {
+  try {
+    await invoke('update_recent_menu', { paths: recentDirectories });
+  } catch (e) {
+    console.error('Could not update recent menu:', e);
+  }
 }
 
 // ============ Start ============
