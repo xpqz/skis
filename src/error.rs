@@ -32,6 +32,9 @@ pub enum Error {
     #[error("Link already exists between issues #{0} and #{1}")]
     DuplicateLink(i64, i64),
 
+    #[error("{0}: not yet implemented")]
+    NotImplemented(String),
+
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
 

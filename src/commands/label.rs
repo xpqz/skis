@@ -1,18 +1,15 @@
-use ski::error::Result;
+use ski::error::{Error, Result};
 
 use crate::{LabelCreateArgs, LabelDeleteArgs, LabelListArgs};
 
 pub fn list(_args: LabelListArgs) -> Result<()> {
-    eprintln!("label list: not yet implemented");
-    Ok(())
+    Err(Error::NotImplemented("label list".to_string()))
 }
 
 pub fn create(_args: LabelCreateArgs) -> Result<()> {
-    eprintln!("label create: not yet implemented");
-    Ok(())
+    Err(Error::NotImplemented("label create".to_string()))
 }
 
 pub fn delete(_args: LabelDeleteArgs) -> Result<()> {
-    eprintln!("label delete: not yet implemented");
-    Ok(())
+    Err(Error::NotImplemented("label delete".to_string()))
 }

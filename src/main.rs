@@ -53,193 +53,149 @@ enum IssueCommands {
 }
 
 #[derive(Args)]
-struct IssueCreateArgs {
-    /// Issue title
+pub struct IssueCreateArgs {
+    /// Issue title (required)
     #[arg(short, long)]
-    title: Option<String>,
+    pub title: Option<String>,
 
     /// Issue body
     #[arg(short, long)]
-    body: Option<String>,
-
-    /// Read body from file (- for stdin)
-    #[arg(short = 'F', long = "body-file")]
-    body_file: Option<String>,
+    pub body: Option<String>,
 
     /// Issue type: epic, task, bug, request
     #[arg(short = 'T', long = "type", default_value = "task")]
-    issue_type: String,
+    pub issue_type: String,
 
     /// Add label(s), can be repeated
     #[arg(short, long = "label", action = clap::ArgAction::Append)]
-    labels: Vec<String>,
-
-    /// Open $EDITOR to write title and body
-    #[arg(short, long)]
-    editor: bool,
+    pub labels: Vec<String>,
 }
 
 #[derive(Args)]
-struct IssueListArgs {
+pub struct IssueListArgs {
     /// Filter by state: open, closed, all
     #[arg(short, long, default_value = "open")]
-    state: String,
+    pub state: String,
 
     /// Filter by type: epic, task, bug, request
     #[arg(short = 'T', long = "type")]
-    issue_type: Option<String>,
+    pub issue_type: Option<String>,
 
     /// Filter by label, can be repeated (AND logic)
     #[arg(short, long = "label", action = clap::ArgAction::Append)]
-    labels: Vec<String>,
-
-    /// Full-text search in title and body
-    #[arg(short = 'S', long)]
-    search: Option<String>,
+    pub labels: Vec<String>,
 
     /// Sort by: updated, created, id
     #[arg(long, default_value = "updated")]
-    sort: String,
+    pub sort: String,
 
     /// Sort direction: asc, desc
     #[arg(long, default_value = "desc")]
-    order: String,
+    pub order: String,
 
     /// Maximum issues to show
     #[arg(short = 'L', long, default_value = "30")]
-    limit: usize,
+    pub limit: usize,
 
     /// Skip first N issues (for pagination)
     #[arg(long, default_value = "0")]
-    offset: usize,
+    pub offset: usize,
 
     /// Include soft-deleted issues
     #[arg(long)]
-    deleted: bool,
+    pub deleted: bool,
 
     /// Output as JSON
     #[arg(long)]
-    json: bool,
+    pub json: bool,
 }
 
 #[derive(Args)]
-struct IssueViewArgs {
+pub struct IssueViewArgs {
     /// Issue number
-    number: i64,
-
-    /// Include comments
-    #[arg(short, long)]
-    comments: bool,
+    pub number: i64,
 
     /// Output as JSON
     #[arg(long)]
-    json: bool,
+    pub json: bool,
 }
 
 #[derive(Args)]
-struct IssueEditArgs {
+pub struct IssueEditArgs {
     /// Issue number
-    number: i64,
+    pub number: i64,
 
     /// Set new title
     #[arg(short, long)]
-    title: Option<String>,
+    pub title: Option<String>,
 
     /// Set new body
     #[arg(short, long)]
-    body: Option<String>,
-
-    /// Read body from file
-    #[arg(short = 'F', long = "body-file")]
-    body_file: Option<String>,
+    pub body: Option<String>,
 
     /// Change issue type
     #[arg(short = 'T', long = "type")]
-    issue_type: Option<String>,
-
-    /// Add label(s)
-    #[arg(long = "add-label", action = clap::ArgAction::Append)]
-    add_labels: Vec<String>,
-
-    /// Remove label(s)
-    #[arg(long = "remove-label", action = clap::ArgAction::Append)]
-    remove_labels: Vec<String>,
-
-    /// Open in $EDITOR
-    #[arg(short, long)]
-    editor: bool,
+    pub issue_type: Option<String>,
 }
 
 #[derive(Args)]
-struct IssueCloseArgs {
+pub struct IssueCloseArgs {
     /// Issue number
-    number: i64,
+    pub number: i64,
 
     /// Reason: completed, not_planned
     #[arg(short, long, default_value = "completed")]
-    reason: String,
-
-    /// Add a closing comment
-    #[arg(short, long)]
-    comment: Option<String>,
+    pub reason: String,
 }
 
 #[derive(Args)]
-struct IssueReopenArgs {
+pub struct IssueReopenArgs {
     /// Issue number
-    number: i64,
+    pub number: i64,
 }
 
 #[derive(Args)]
-struct IssueDeleteArgs {
+pub struct IssueDeleteArgs {
     /// Issue number
-    number: i64,
+    pub number: i64,
 
     /// Skip confirmation prompt
     #[arg(long)]
-    yes: bool,
+    pub yes: bool,
 }
 
 #[derive(Args)]
-struct IssueRestoreArgs {
+pub struct IssueRestoreArgs {
     /// Issue number
-    number: i64,
+    pub number: i64,
 }
 
 #[derive(Args)]
-struct IssueCommentArgs {
+pub struct IssueCommentArgs {
     /// Issue number
-    number: i64,
+    pub number: i64,
 
     /// Comment body
     #[arg(short, long)]
-    body: Option<String>,
-
-    /// Read body from file
-    #[arg(short = 'F', long = "body-file")]
-    body_file: Option<String>,
-
-    /// Open in $EDITOR
-    #[arg(short, long)]
-    editor: bool,
+    pub body: Option<String>,
 }
 
 #[derive(Args)]
-struct IssueLinkArgs {
+pub struct IssueLinkArgs {
     /// First issue number
-    issue_a: i64,
+    pub issue_a: i64,
 
     /// Second issue number
-    issue_b: i64,
+    pub issue_b: i64,
 }
 
 #[derive(Args)]
-struct IssueUnlinkArgs {
+pub struct IssueUnlinkArgs {
     /// First issue number
-    issue_a: i64,
+    pub issue_a: i64,
 
     /// Second issue number
-    issue_b: i64,
+    pub issue_b: i64,
 }
 
 #[derive(Subcommand)]
@@ -254,34 +210,34 @@ enum LabelCommands {
 }
 
 #[derive(Args)]
-struct LabelListArgs {
+pub struct LabelListArgs {
     /// Output as JSON
     #[arg(long)]
-    json: bool,
+    pub json: bool,
 }
 
 #[derive(Args)]
-struct LabelCreateArgs {
+pub struct LabelCreateArgs {
     /// Label name
-    name: String,
+    pub name: String,
 
     /// Label description
     #[arg(short, long)]
-    description: Option<String>,
+    pub description: Option<String>,
 
     /// Color in hex (e.g., ff0000)
     #[arg(short, long)]
-    color: Option<String>,
+    pub color: Option<String>,
 }
 
 #[derive(Args)]
-struct LabelDeleteArgs {
+pub struct LabelDeleteArgs {
     /// Label name
-    name: String,
+    pub name: String,
 
     /// Skip confirmation
     #[arg(long)]
-    yes: bool,
+    pub yes: bool,
 }
 
 fn main() -> ExitCode {

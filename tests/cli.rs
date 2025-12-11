@@ -434,6 +434,57 @@ fn cli_issue_restore_appears_in_list() {
         .stdout(predicate::str::contains("Restore me"));
 }
 
+// Unimplemented commands should fail
+
+#[test]
+fn cli_unimplemented_commands_return_error() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    // label commands are not implemented
+    skis()
+        .args(["label", "list"])
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not yet implemented"));
+
+    skis()
+        .args(["label", "create", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("not yet implemented"));
+}
+
+// Sort and order flags
+
+#[test]
+fn cli_issue_list_with_sort_and_order() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "First"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "create", "--title", "Second"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // Sort by id ascending should show First before Second
+    skis()
+        .args(["issue", "list", "--sort", "id", "--order", "asc"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("First"));
+}
+
 // Repository discovery test
 
 #[test]

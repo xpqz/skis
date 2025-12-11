@@ -2,7 +2,10 @@ use std::str::FromStr;
 
 use ski::db::{self, SkisDb};
 use ski::error::Result;
-use ski::models::{IssueCreate, IssueFilter, IssueState, IssueType, IssueUpdate, StateReason};
+use ski::models::{
+    IssueCreate, IssueFilter, IssueState, IssueType, IssueUpdate, SortField, SortOrder,
+    StateReason,
+};
 
 use crate::{
     IssueCloseArgs, IssueCommentArgs, IssueCreateArgs, IssueDeleteArgs, IssueEditArgs,
@@ -52,14 +55,40 @@ pub fn list(args: IssueListArgs) -> Result<()> {
         .map(|t| IssueType::from_str(&t))
         .transpose()?;
 
+    let sort_by = match args.sort.to_lowercase().as_str() {
+        "updated" => SortField::Updated,
+        "created" => SortField::Created,
+        "id" => SortField::Id,
+        _ => {
+            eprintln!(
+                "error: invalid sort field '{}', must be updated, created, or id",
+                args.sort
+            );
+            std::process::exit(1);
+        }
+    };
+
+    let sort_order = match args.order.to_lowercase().as_str() {
+        "asc" => SortOrder::Asc,
+        "desc" => SortOrder::Desc,
+        _ => {
+            eprintln!(
+                "error: invalid sort order '{}', must be asc or desc",
+                args.order
+            );
+            std::process::exit(1);
+        }
+    };
+
     let filter = IssueFilter {
         state,
         issue_type,
         labels: args.labels,
         include_deleted: args.deleted,
+        sort_by,
+        sort_order,
         limit: args.limit,
         offset: args.offset,
-        ..Default::default()
     };
 
     let issues = db::list_issues(db.conn(), &filter)?;
@@ -168,16 +197,13 @@ pub fn restore(args: IssueRestoreArgs) -> Result<()> {
 }
 
 pub fn comment(_args: IssueCommentArgs) -> Result<()> {
-    eprintln!("issue comment: not yet implemented");
-    Ok(())
+    Err(ski::error::Error::NotImplemented("issue comment".to_string()))
 }
 
 pub fn link(_args: IssueLinkArgs) -> Result<()> {
-    eprintln!("issue link: not yet implemented");
-    Ok(())
+    Err(ski::error::Error::NotImplemented("issue link".to_string()))
 }
 
 pub fn unlink(_args: IssueUnlinkArgs) -> Result<()> {
-    eprintln!("issue unlink: not yet implemented");
-    Ok(())
+    Err(ski::error::Error::NotImplemented("issue unlink".to_string()))
 }
