@@ -480,7 +480,7 @@ Argument: `<NUMBER>`
 
 ## Phase 2: Full Issue Support
 
-### 2.1 Implement `update_issue()`
+### 2.1 Implement `update_issue()` ✅
 
 - Update title, body, and/or issue_type
 - Only update fields that are `Some` in `IssueUpdate`
