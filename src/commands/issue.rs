@@ -1,18 +1,56 @@
 use std::io::Read;
 use std::str::FromStr;
 
+use colored::Colorize;
 use ski::db::{self, SkisDb};
 use ski::error::Result;
 use ski::models::{
     Issue, IssueCreate, IssueFilter, IssueState, IssueType, IssueUpdate, IssueView, SortField,
     SortOrder, StateReason,
 };
+use ski::output::format_timestamp;
 
 use crate::{
     IssueCloseArgs, IssueCommentArgs, IssueCreateArgs, IssueDeleteArgs, IssueEditArgs,
     IssueListArgs, IssueLinkArgs, IssueReopenArgs, IssueRestoreArgs, IssueUnlinkArgs,
     IssueViewArgs,
 };
+
+/// Format issue type with color
+fn format_type_colored(issue_type: IssueType) -> colored::ColoredString {
+    match issue_type {
+        IssueType::Epic => "epic".magenta().bold(),
+        IssueType::Task => "task".blue(),
+        IssueType::Bug => "bug".red(),
+        IssueType::Request => "request".cyan(),
+    }
+}
+
+/// Format issue state with color
+fn format_state_colored(state: IssueState) -> colored::ColoredString {
+    match state {
+        IssueState::Open => "open".green(),
+        IssueState::Closed => "closed".red(),
+    }
+}
+
+/// Format a label with its color (if available)
+fn format_label_colored(name: &str, color: Option<&str>) -> String {
+    match color {
+        Some(hex) if hex.len() == 6 => {
+            // Parse hex color and apply
+            if let (Ok(r), Ok(g), Ok(b)) = (
+                u8::from_str_radix(&hex[0..2], 16),
+                u8::from_str_radix(&hex[2..4], 16),
+                u8::from_str_radix(&hex[4..6], 16),
+            ) {
+                return name.truecolor(r, g, b).to_string();
+            }
+            name.to_string()
+        }
+        _ => name.yellow().to_string(),
+    }
+}
 
 /// Read body content from file or stdin (if path is "-")
 fn read_body_from_file(path: &str) -> Result<String> {
@@ -25,12 +63,50 @@ fn read_body_from_file(path: &str) -> Result<String> {
     }
 }
 
-/// Resolve body from --body or --body-file options
-fn resolve_body(body: Option<String>, body_file: Option<String>) -> Result<Option<String>> {
-    match (body, body_file) {
-        (Some(b), _) => Ok(Some(b)),
-        (None, Some(path)) => Ok(Some(read_body_from_file(&path)?)),
-        (None, None) => Ok(None),
+/// Open $EDITOR to get content from user
+fn read_body_from_editor() -> Result<Option<String>> {
+    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+
+    // Create a temp file
+    let temp_dir = std::env::temp_dir();
+    let temp_path = temp_dir.join(format!("skis-{}.md", std::process::id()));
+
+    // Spawn editor
+    let status = std::process::Command::new(&editor)
+        .arg(&temp_path)
+        .status()?;
+
+    if !status.success() {
+        eprintln!("Editor exited with non-zero status");
+        return Ok(None);
+    }
+
+    // Read the file if it exists
+    if temp_path.exists() {
+        let content = std::fs::read_to_string(&temp_path)?;
+        let _ = std::fs::remove_file(&temp_path); // Clean up
+
+        let content = content.trim().to_string();
+        if content.is_empty() {
+            return Ok(None);
+        }
+        return Ok(Some(content));
+    }
+
+    Ok(None)
+}
+
+/// Resolve body from --body, --body-file, or --editor options
+fn resolve_body(
+    body: Option<String>,
+    body_file: Option<String>,
+    editor: bool,
+) -> Result<Option<String>> {
+    match (body, body_file, editor) {
+        (Some(b), _, _) => Ok(Some(b)),
+        (None, Some(path), _) => Ok(Some(read_body_from_file(&path)?)),
+        (None, None, true) => read_body_from_editor(),
+        (None, None, false) => Ok(None),
     }
 }
 
@@ -44,7 +120,7 @@ pub fn create(args: IssueCreateArgs) -> Result<()> {
     };
 
     let issue_type = IssueType::from_str(&args.issue_type)?;
-    let body = resolve_body(args.body, args.body_file)?;
+    let body = resolve_body(args.body, args.body_file, args.editor)?;
 
     let db = SkisDb::open()?;
     let create = IssueCreate {
@@ -124,21 +200,32 @@ pub fn list(args: IssueListArgs) -> Result<()> {
     } else if issues.is_empty() {
         println!("No issues found");
     } else {
-        // Simple table output for now
-        println!("{:<6} {:<8} {:<8} {:<20} {}", "ID", "TYPE", "STATE", "LABELS", "TITLE");
+        // Simple table output with colors
+        println!(
+            "{:<6} {:<8} {:<8} {:<20} {}",
+            "ID".bold(),
+            "TYPE".bold(),
+            "STATE".bold(),
+            "LABELS".bold(),
+            "TITLE".bold()
+        );
         println!("{}", "-".repeat(80));
         for issue in &issues {
             let labels = db::get_issue_labels(db.conn(), issue.id)?;
             let label_str = if labels.is_empty() {
-                "-".to_string()
+                "-".dimmed().to_string()
             } else {
-                labels.iter().map(|l| l.name.as_str()).collect::<Vec<_>>().join(",")
+                labels
+                    .iter()
+                    .map(|l| format_label_colored(&l.name, l.color.as_deref()))
+                    .collect::<Vec<_>>()
+                    .join(",")
             };
             println!(
                 "{:<6} {:<8} {:<8} {:<20} {}",
                 format!("#{}", issue.id),
-                issue.issue_type,
-                issue.state,
+                format_type_colored(issue.issue_type),
+                format_state_colored(issue.state),
                 label_str,
                 issue.title
             );
@@ -185,19 +272,30 @@ fn print_issue_view(
     issue: &Issue,
     show_comments: bool,
 ) -> Result<()> {
-    println!("#{} {}", issue.id, issue.title);
-    println!("Type: {}  State: {}", issue.issue_type, issue.state);
+    println!(
+        "{} {}",
+        format!("#{}", issue.id).bold(),
+        issue.title.bold()
+    );
+    println!(
+        "Type: {}  State: {}",
+        format_type_colored(issue.issue_type),
+        format_state_colored(issue.state)
+    );
     if let Some(reason) = &issue.state_reason {
         println!("Closed: {}", reason);
     }
-    println!("Created: {}", issue.created_at);
-    println!("Updated: {}", issue.updated_at);
+    println!("Created: {}", format_timestamp(issue.created_at).dimmed());
+    println!("Updated: {}", format_timestamp(issue.updated_at).dimmed());
 
     // Show labels
     let labels = db::get_issue_labels(conn, issue.id)?;
     if !labels.is_empty() {
-        let label_names: Vec<&str> = labels.iter().map(|l| l.name.as_str()).collect();
-        println!("Labels: {}", label_names.join(", "));
+        let label_strs: Vec<String> = labels
+            .iter()
+            .map(|l| format_label_colored(&l.name, l.color.as_deref()))
+            .collect();
+        println!("Labels: {}", label_strs.join(", "));
     }
 
     // Show linked issues
@@ -218,7 +316,7 @@ fn print_issue_view(
             println!("\nComments:");
             println!("{}", "-".repeat(40));
             for comment in comments {
-                println!("[{}]", comment.created_at);
+                println!("[{}]", format_timestamp(comment.created_at));
                 println!("{}", comment.body);
                 println!();
             }
@@ -236,7 +334,7 @@ pub fn edit(args: IssueEditArgs) -> Result<()> {
         .map(|t| IssueType::from_str(&t))
         .transpose()?;
 
-    let body = resolve_body(args.body, args.body_file)?;
+    let body = resolve_body(args.body, args.body_file, args.editor)?;
 
     let update = IssueUpdate {
         title: args.title,
@@ -306,11 +404,11 @@ pub fn restore(args: IssueRestoreArgs) -> Result<()> {
 }
 
 pub fn comment(args: IssueCommentArgs) -> Result<()> {
-    let body = resolve_body(args.body, args.body_file)?;
+    let body = resolve_body(args.body, args.body_file, args.editor)?;
     let body = match body {
         Some(b) => b,
         None => {
-            eprintln!("error: --body or --body-file is required");
+            eprintln!("error: --body, --body-file, or --editor is required");
             std::process::exit(1);
         }
     };

@@ -66,6 +66,10 @@ pub struct IssueCreateArgs {
     #[arg(short = 'F', long)]
     pub body_file: Option<String>,
 
+    /// Open $EDITOR to write body
+    #[arg(short, long)]
+    pub editor: bool,
+
     /// Issue type: epic, task, bug, request
     #[arg(short = 'T', long = "type", default_value = "task")]
     pub issue_type: String,
@@ -149,6 +153,10 @@ pub struct IssueEditArgs {
     #[arg(short = 'F', long)]
     pub body_file: Option<String>,
 
+    /// Open $EDITOR to write body
+    #[arg(short, long)]
+    pub editor: bool,
+
     /// Change issue type
     #[arg(short = 'T', long = "type")]
     pub issue_type: Option<String>,
@@ -210,6 +218,10 @@ pub struct IssueCommentArgs {
     /// Read body from file (use - for stdin)
     #[arg(short = 'F', long)]
     pub body_file: Option<String>,
+
+    /// Open $EDITOR to write body
+    #[arg(short, long)]
+    pub editor: bool,
 }
 
 #[derive(Args)]

@@ -796,35 +796,35 @@ Option: `-F/--body-file <FILE>` - Read body from file (use `-` for stdin)
 
 ---
 
-### 4.6 Implement `--editor` for issue create/edit/comment
+### 4.6 Implement `--editor` for issue create/edit/comment ✅
 
 Option: `-e/--editor` - Open `$EDITOR` to write content
 
-**Acceptance**: Manual testing (involves spawning editor).
+**Acceptance**: Manual testing (involves spawning editor). ✅
 
 ---
 
-### 4.7 Add colored terminal output
+### 4.7 Add colored terminal output ✅
 
 Use `colored` crate for:
 - Issue type badges
 - State indicators (green=open, red=closed)
 - Label colors
 
-**Acceptance**: Manual visual verification (colors don't affect test assertions).
+**Acceptance**: Manual visual verification (colors don't affect test assertions). ✅
 
 ---
 
-### 4.8 Implement human-readable timestamps
+### 4.8 Implement human-readable timestamps ✅
 
 Display "2 hours ago", "3 days ago" instead of raw timestamps.
 
 **Acceptance**:
 ```rust
-#[test] fn format_relative_time_seconds()
-#[test] fn format_relative_time_minutes()
-#[test] fn format_relative_time_hours()
-#[test] fn format_relative_time_days()
+#[test] fn format_relative_time_seconds() ✅
+#[test] fn format_relative_time_minutes() ✅
+#[test] fn format_relative_time_hours() ✅
+#[test] fn format_relative_time_days() ✅
 ```
 
 ---
