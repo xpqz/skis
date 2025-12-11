@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edit Issue</title>
+  <link rel="stylesheet" href="edit.css">
+</head>
+<body>
+  <form id="issue-form">
+    <div class="form-group">
+      <label for="input-title">Title</label>
+      <input type="text" id="input-title" required placeholder="Issue title...">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="input-type">Type</label>
+        <select id="input-type">
+          <option value="task">Task</option>
+          <option value="bug">Bug</option>
+          <option value="epic">Epic</option>
+          <option value="request">Request</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Labels</label>
+        <div class="labels-dropdown" id="labels-dropdown">
+          <button type="button" class="labels-trigger" id="labels-trigger">
+            <span class="selected-labels" id="selected-labels"></span>
+          </button>
+          <div class="labels-menu" id="labels-menu">
+            <!-- Labels will be populated dynamically -->
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="form-group form-group-body">
+      <label for="input-body">Description</label>
+      <textarea id="input-body" placeholder="Describe the issue..."></textarea>
+    </div>
+    <div class="form-actions">
+      <button type="button" id="btn-cancel" class="btn-secondary">Cancel</button>
+      <button type="submit" id="btn-save" class="btn-primary">Save</button>
+    </div>
+  </form>
+
+  <script type="module" src="edit.js"></script>
+</body>
+</html>

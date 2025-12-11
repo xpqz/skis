@@ -2,9 +2,16 @@
   "$schema": "https://schema.tauri.app/config/2",
   "identifier": "default",
   "description": "Default capabilities for SKIS GUI",
-  "windows": ["main"],
+  "windows": ["main", "new", "edit-*"],
   "permissions": [
     "core:default",
+    "core:window:allow-close",
+    "core:window:allow-inner-size",
+    "core:window:allow-outer-position",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:event:allow-emit",
+    "core:event:allow-listen",
     "dialog:default",
     "shell:allow-open"
   ]

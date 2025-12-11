@@ -6,7 +6,8 @@ use ski::{
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
-use tauri::{AppHandle, Emitter, State};
+use tauri::webview::WebviewWindowBuilder;
+use tauri::{AppHandle, Emitter, Manager, State};
 
 // Application state holding the database connection
 pub struct AppState {
@@ -543,6 +544,39 @@ fn unlink_issues(state: State<AppState>, issue_a: i64, issue_b: i64) -> Response
     })
 }
 
+// ============ Window Commands ============
+
+#[tauri::command]
+fn open_edit_window(app: AppHandle, issue_id: Option<i64>) -> Response<()> {
+    let label = match issue_id {
+        Some(id) => format!("edit-{}", id),
+        None => "new".to_string(),
+    };
+
+    let title = match issue_id {
+        Some(id) => format!("Edit Issue #{}", id),
+        None => "New Issue".to_string(),
+    };
+
+    // Check if window already exists
+    if let Some(window) = app.get_webview_window(&label) {
+        let _ = window.set_focus();
+        return Response::ok(());
+    }
+
+    // Create new window
+    match WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App("edit.html".into()))
+        .title(&title)
+        .inner_size(600.0, 580.0)
+        .min_inner_size(500.0, 450.0)
+        .resizable(true)
+        .build()
+    {
+        Ok(_) => Response::ok(()),
+        Err(e) => Response::err(e.to_string()),
+    }
+}
+
 // ============ Menu Commands ============
 
 #[tauri::command]
@@ -594,6 +628,8 @@ fn rebuild_menu(app: &AppHandle, recent_paths: &[String]) -> Result<(), Box<dyn 
                 .accelerator("CmdOrCtrl+N")
                 .build(app)?,
         )
+        .separator()
+        .quit()
         .build()?;
 
     // Build Edit menu
@@ -607,10 +643,28 @@ fn rebuild_menu(app: &AppHandle, recent_paths: &[String]) -> Result<(), Box<dyn 
         .select_all()
         .build()?;
 
+    // Build View menu
+    let view_menu = SubmenuBuilder::new(app, "View")
+        .item(
+            &MenuItemBuilder::new("Toggle Sidebar")
+                .id("toggle-sidebar")
+                .accelerator("CmdOrCtrl+\\")
+                .build(app)?,
+        )
+        .separator()
+        .item(
+            &MenuItemBuilder::new("Reload")
+                .id("reload")
+                .accelerator("CmdOrCtrl+R")
+                .build(app)?,
+        )
+        .build()?;
+
     // Build full menu
     let menu = MenuBuilder::new(app)
         .item(&file_menu)
         .item(&edit_menu)
+        .item(&view_menu)
         .build()?;
 
     app.set_menu(menu)?;
@@ -634,6 +688,10 @@ pub fn run() {
             let id = event.id().as_ref();
             if id == "open" {
                 let _ = app.emit("menu-open", ());
+            } else if id == "reload" {
+                let _ = app.emit("menu-reload", ());
+            } else if id == "toggle-sidebar" {
+                let _ = app.emit("menu-toggle-sidebar", ());
             } else if let Some(path) = id.strip_prefix("recent:") {
                 let _ = app.emit("menu-open-recent", path);
             }
@@ -665,6 +723,8 @@ pub fn run() {
             // Links
             link_issues,
             unlink_issues,
+            // Windows
+            open_edit_window,
             // Menu
             update_recent_menu,
         ])

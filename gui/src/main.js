@@ -2,11 +2,15 @@
 const { invoke } = window.__TAURI__.core;
 const { open } = window.__TAURI__.dialog;
 const { listen } = window.__TAURI__.event;
+const { getCurrentWindow } = window.__TAURI__.window;
 
 // ============ Constants ============
 
 const MAX_RECENT_DIRS = 10;
 const STORAGE_RECENT_DIRS = 'skis_recent_directories';
+const STORAGE_WINDOW_STATE = 'skis_main_window_state';
+const STORAGE_APP_STATE = 'skis_app_state';
+const PAGE_SIZE = 50;
 
 // ============ State ============
 
@@ -17,6 +21,10 @@ let sortOrder = 'desc';
 let editingIssueId = null;
 let homeDir = '';
 let recentDirectories = [];
+let isLoadingMore = false;
+let hasMoreIssues = true;
+let sidebarCollapsed = false;
+let sidebarWidth = 320;
 
 // ============ DOM Elements ============
 
@@ -32,11 +40,13 @@ const filterType = document.getElementById('filter-type');
 const filterLabel = document.getElementById('filter-label');
 
 // Issue list
+const issueListPanel = document.getElementById('issue-list-panel');
 const issueList = document.getElementById('issue-list');
 const issueCount = document.getElementById('issue-count');
 const emptyState = document.getElementById('empty-state');
 const sortBy = document.getElementById('sort-by');
 const btnSortOrder = document.getElementById('btn-sort-order');
+const paneDivider = document.getElementById('pane-divider');
 
 // Issue detail
 const detailEmpty = document.getElementById('detail-empty');
@@ -62,35 +72,12 @@ const btnReopen = document.getElementById('btn-reopen');
 const btnDelete = document.getElementById('btn-delete');
 const btnNewIssue = document.getElementById('btn-new-issue');
 
-// Labels bar
-const labelsList = document.getElementById('labels-list');
-const btnManageLabels = document.getElementById('btn-manage-labels');
-
-// Issue modal
-const modalOverlay = document.getElementById('modal-overlay');
-const modalTitle = document.getElementById('modal-title');
-const issueForm = document.getElementById('issue-form');
-const inputTitle = document.getElementById('input-title');
-const inputType = document.getElementById('input-type');
-const inputLabels = document.getElementById('input-labels');
-const inputBody = document.getElementById('input-body');
-const btnModalClose = document.getElementById('btn-modal-close');
-const btnModalCancel = document.getElementById('btn-modal-cancel');
-const btnModalSave = document.getElementById('btn-modal-save');
-
-// Close modal
+// Close issue modal
 const closeModalOverlay = document.getElementById('close-modal-overlay');
 const closeReason = document.getElementById('close-reason');
 const closeComment = document.getElementById('close-comment');
 const btnConfirmClose = document.getElementById('btn-confirm-close');
 
-// Labels modal
-const labelsModalOverlay = document.getElementById('labels-modal-overlay');
-const existingLabels = document.getElementById('existing-labels');
-const newLabelName = document.getElementById('new-label-name');
-const newLabelColor = document.getElementById('new-label-color');
-const newLabelDesc = document.getElementById('new-label-desc');
-const btnCreateLabel = document.getElementById('btn-create-label');
 
 // ============ Initialization ============
 
@@ -109,6 +96,17 @@ marked.setOptions({
 });
 
 async function init() {
+  // Restore window size/position
+  await restoreWindowState();
+
+  // Restore sidebar state
+  restoreSidebarState();
+
+  // Save window state on resize/move
+  const win = getCurrentWindow();
+  win.onResized(debounce(saveWindowState, 500));
+  win.onMoved(debounce(saveWindowState, 500));
+
   try {
     const result = await invoke('get_home_dir');
     if (result.ok) {
@@ -136,6 +134,24 @@ async function init() {
     await browseDirectory();
   });
 
+  await listen('menu-reload', async () => {
+    await reload();
+  });
+
+  await listen('menu-toggle-sidebar', () => {
+    toggleSidebar();
+  });
+
+  // Listen for issue saved from edit window
+  await listen('issue-saved', async (event) => {
+    const { id } = event.payload;
+    await loadIssues();
+    await loadLabels();
+    if (id) {
+      await selectIssue(id);
+    }
+  });
+
   // Check for saved directory
   const savedDir = localStorage.getItem('skis_directory');
   if (savedDir) {
@@ -150,32 +166,28 @@ function setupEventListeners() {
   btnBrowse.addEventListener('click', browseDirectory);
   btnInit.addEventListener('click', initRepository);
 
-  // Filters
-  searchInput.addEventListener('input', debounce(loadIssues, 300));
-  filterState.addEventListener('change', loadIssues);
-  filterType.addEventListener('change', loadIssues);
-  filterLabel.addEventListener('change', loadIssues);
-  sortBy.addEventListener('change', loadIssues);
+  // Filters - save state after loading
+  const loadAndSave = async () => {
+    await loadIssues();
+    saveAppState();
+  };
+  searchInput.addEventListener('input', debounce(loadAndSave, 300));
+  filterState.addEventListener('change', loadAndSave);
+  filterType.addEventListener('change', loadAndSave);
+  filterLabel.addEventListener('change', loadAndSave);
+  sortBy.addEventListener('change', loadAndSave);
   btnSortOrder.addEventListener('click', toggleSortOrder);
 
   // New issue
-  btnNewIssue.addEventListener('click', () => openIssueModal());
+  btnNewIssue.addEventListener('click', () => openEditWindow(null));
 
   // Detail actions
-  btnEdit.addEventListener('click', () => openIssueModal(currentIssue));
+  btnEdit.addEventListener('click', () => openEditWindow(currentIssue?.id));
   btnClose.addEventListener('click', showCloseModal);
   btnReopen.addEventListener('click', reopenIssue);
   btnDelete.addEventListener('click', deleteIssue);
   btnLink.addEventListener('click', linkIssue);
   btnAddComment.addEventListener('click', addComment);
-
-  // Issue modal
-  btnModalClose.addEventListener('click', closeIssueModal);
-  btnModalCancel.addEventListener('click', closeIssueModal);
-  issueForm.addEventListener('submit', saveIssue);
-  modalOverlay.addEventListener('click', e => {
-    if (e.target === modalOverlay) closeIssueModal();
-  });
 
   // Close modal
   closeModalOverlay.querySelectorAll('.btn-close-modal').forEach(btn => {
@@ -186,29 +198,31 @@ function setupEventListeners() {
     if (e.target === closeModalOverlay) closeModalOverlay.style.display = 'none';
   });
 
-  // Labels modal
-  btnManageLabels.addEventListener('click', openLabelsModal);
-  labelsModalOverlay.querySelectorAll('.btn-close-labels-modal').forEach(btn => {
-    btn.addEventListener('click', closeLabelsModal);
-  });
-  btnCreateLabel.addEventListener('click', createLabel);
-  labelsModalOverlay.addEventListener('click', e => {
-    if (e.target === labelsModalOverlay) closeLabelsModal();
-  });
-
   // Keyboard shortcuts
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      if (modalOverlay.style.display !== 'none') closeIssueModal();
       if (closeModalOverlay.style.display !== 'none') closeModalOverlay.style.display = 'none';
-      if (labelsModalOverlay.style.display !== 'none') closeLabelsModal();
     }
     // Ctrl+N or Cmd+N for new issue
     if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
       e.preventDefault();
-      openIssueModal();
+      openEditWindow(null);
     }
   });
+
+  // Infinite scroll for issue list
+  issueList.addEventListener('scroll', () => {
+    if (isLoadingMore || !hasMoreIssues) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = issueList;
+    // Load more when within 100px of bottom
+    if (scrollTop + clientHeight >= scrollHeight - 100) {
+      loadIssues(true);
+    }
+  });
+
+  // Pane divider drag
+  setupPaneDivider();
 }
 
 // ============ Directory Management ============
@@ -239,8 +253,22 @@ async function selectDirectory(path) {
 
       if (result.data.initialized) {
         btnInit.style.display = 'none';
+
+        // Restore app state before loading (filters, sort)
+        const savedState = restoreAppState();
+
         await loadIssues();
         await loadLabels();
+
+        // Restore label filter after labels are loaded
+        if (savedState?.filterLabel) {
+          filterLabel.value = savedState.filterLabel;
+        }
+
+        // Restore selected issue after issues are loaded
+        if (savedState?.selectedIssueId) {
+          await selectIssue(savedState.selectedIssueId);
+        }
       } else {
         btnInit.style.display = 'inline-block';
         showEmptyState('Directory not initialized. Click ⚡ to initialize SKIS.');
@@ -268,33 +296,177 @@ async function initRepository() {
   }
 }
 
+async function reload() {
+  const currentId = currentIssue?.id;
+  await loadIssues();
+  await loadLabels();
+  if (currentId) {
+    await loadIssueDetail(currentId);
+  }
+}
+
+// ============ Sidebar ============
+
+function toggleSidebar() {
+  sidebarCollapsed = !sidebarCollapsed;
+  issueListPanel.classList.toggle('collapsed', sidebarCollapsed);
+  saveSidebarState();
+}
+
+function setupPaneDivider() {
+  let isDragging = false;
+  let startX = 0;
+  let startWidth = 0;
+
+  paneDivider.addEventListener('mousedown', (e) => {
+    if (sidebarCollapsed) return;
+    isDragging = true;
+    startX = e.clientX;
+    startWidth = issueListPanel.offsetWidth;
+    paneDivider.classList.add('dragging');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const delta = e.clientX - startX;
+    const newWidth = Math.max(200, Math.min(600, startWidth + delta));
+    issueListPanel.style.width = newWidth + 'px';
+    sidebarWidth = newWidth;
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!isDragging) return;
+    isDragging = false;
+    paneDivider.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    saveSidebarState();
+  });
+}
+
+function saveSidebarState() {
+  localStorage.setItem('skis_sidebar', JSON.stringify({
+    collapsed: sidebarCollapsed,
+    width: sidebarWidth
+  }));
+}
+
+function restoreSidebarState() {
+  try {
+    const stored = localStorage.getItem('skis_sidebar');
+    if (!stored) return;
+
+    const state = JSON.parse(stored);
+    sidebarCollapsed = state.collapsed || false;
+    sidebarWidth = state.width || 320;
+
+    issueListPanel.classList.toggle('collapsed', sidebarCollapsed);
+    if (!sidebarCollapsed) {
+      issueListPanel.style.width = sidebarWidth + 'px';
+    }
+  } catch (e) {
+    console.error('Could not restore sidebar state:', e);
+  }
+}
+
+// ============ App State ============
+
+function saveAppState() {
+  const state = {
+    filterState: filterState.value,
+    filterType: filterType.value,
+    filterLabel: filterLabel.value,
+    sortBy: sortBy.value,
+    sortOrder: sortOrder,
+    search: searchInput.value,
+    selectedIssueId: currentIssue?.id || null
+  };
+  localStorage.setItem(STORAGE_APP_STATE, JSON.stringify(state));
+}
+
+function restoreAppState() {
+  try {
+    const stored = localStorage.getItem(STORAGE_APP_STATE);
+    if (!stored) return null;
+
+    const state = JSON.parse(stored);
+
+    // Restore filter values
+    if (state.filterState) filterState.value = state.filterState;
+    if (state.filterType) filterType.value = state.filterType;
+    // filterLabel will be restored after labels are loaded
+    if (state.sortBy) sortBy.value = state.sortBy;
+    if (state.sortOrder) {
+      sortOrder = state.sortOrder;
+      btnSortOrder.textContent = sortOrder === 'desc' ? '↓' : '↑';
+    }
+    if (state.search) searchInput.value = state.search;
+
+    return state;
+  } catch (e) {
+    console.error('Could not restore app state:', e);
+    return null;
+  }
+}
+
 // ============ Issue List ============
 
-async function loadIssues() {
+async function loadIssues(append) {
+  // Ensure append is strictly boolean (event objects passed from handlers should be ignored)
+  append = append === true;
+
+  if (isLoadingMore) return;
+
+  const offset = append ? issues.length : 0;
+
+  if (!append) {
+    issues = [];
+    hasMoreIssues = true;
+  }
+
+  if (!hasMoreIssues) return;
+
+  isLoadingMore = true;
+
   const filter = {
     state: filterState.value || null,
     issue_type: filterType.value || null,
     labels: filterLabel.value ? [filterLabel.value] : null,
     sort_by: sortBy.value,
     sort_order: sortOrder,
-    search: searchInput.value || null
+    search: searchInput.value || null,
+    limit: PAGE_SIZE,
+    offset: offset
   };
 
   try {
     const result = await invoke('list_issues', { filter });
     if (result.ok) {
-      issues = result.data;
+      const newIssues = result.data;
+
+      if (append) {
+        issues = [...issues, ...newIssues];
+      } else {
+        issues = newIssues;
+      }
+
+      hasMoreIssues = newIssues.length === PAGE_SIZE;
       renderIssueList();
     } else {
       showError(result.error);
     }
   } catch (err) {
     showError(err);
+  } finally {
+    isLoadingMore = false;
   }
 }
 
 function renderIssueList() {
-  if (issues.length === 0) {
+  if (issues.length === 0 && !isLoadingMore) {
     emptyState.style.display = 'flex';
     emptyState.innerHTML = '<p>No issues found</p>';
     issueList.innerHTML = '';
@@ -303,22 +475,17 @@ function renderIssueList() {
   }
 
   emptyState.style.display = 'none';
-  issueCount.textContent = `${issues.length} issue${issues.length !== 1 ? 's' : ''}`;
+  const countText = hasMoreIssues ? `${issues.length}+ issues` : `${issues.length} issue${issues.length !== 1 ? 's' : ''}`;
+  issueCount.textContent = countText;
 
   issueList.innerHTML = issues.map(issue => `
     <div class="issue-item ${currentIssue && currentIssue.id === issue.id ? 'selected' : ''}"
          data-id="${issue.id}">
-      <div class="issue-item-header">
-        <span class="issue-item-id">#${issue.id}</span>
-        <span class="badge badge-type ${issue.issue_type}">${issue.issue_type}</span>
-        <span class="badge badge-state ${issue.state}">${issue.state}</span>
+      <div class="issue-item-title"><span class="issue-item-id">#${issue.id}</span> ${escapeHtml(issue.title)}</div>
+      <div class="issue-item-labels">
+        <span class="label-pill type-${issue.type}">${issue.type}</span>
+        ${issue.labels.map(l => renderLabelPill(l, true)).join('')}
       </div>
-      <div class="issue-item-title">${escapeHtml(issue.title)}</div>
-      ${issue.labels.length > 0 ? `
-        <div class="issue-item-labels">
-          ${issue.labels.map(l => renderLabelPill(l, true)).join('')}
-        </div>
-      ` : ''}
     </div>
   `).join('');
 
@@ -341,6 +508,9 @@ async function selectIssue(id) {
 
   // Always load the detail - even if not in current filtered list
   await loadIssueDetail(id);
+
+  // Save app state when issue selection changes
+  saveAppState();
 }
 
 // ============ Issue Detail ============
@@ -372,8 +542,8 @@ function renderIssueDetail() {
 
   detailId.textContent = `#${currentIssue.id}`;
   detailTitle.textContent = currentIssue.title;
-  detailType.textContent = currentIssue.issue_type;
-  detailType.className = `badge badge-type ${currentIssue.issue_type}`;
+  detailType.textContent = currentIssue.type;
+  detailType.className = `badge badge-type ${currentIssue.type}`;
   detailState.textContent = currentIssue.state;
   detailState.className = `badge badge-state ${currentIssue.state}`;
   detailTimestamps.textContent = formatTimestamps(currentIssue);
@@ -453,79 +623,14 @@ function renderComments(comments) {
 
 // ============ Issue Actions ============
 
-function openIssueModal(issue = null) {
-  editingIssueId = issue ? issue.id : null;
-  modalTitle.textContent = issue ? 'Edit Issue' : 'New Issue';
-  btnModalSave.textContent = issue ? 'Save Changes' : 'Create Issue';
-
-  inputTitle.value = issue ? issue.title : '';
-  inputType.value = issue ? issue.issue_type : 'task';
-  inputBody.value = issue ? (issue.body || '') : '';
-
-  // Populate labels
-  inputLabels.innerHTML = labels.map(l => `
-    <option value="${escapeHtml(l.name)}" ${issue && issue.labels.some(il => il.name === l.name) ? 'selected' : ''}>
-      ${escapeHtml(l.name)}
-    </option>
-  `).join('');
-
-  modalOverlay.style.display = 'flex';
-  inputTitle.focus();
-}
-
-function closeIssueModal() {
-  modalOverlay.style.display = 'none';
-  editingIssueId = null;
-  issueForm.reset();
-}
-
-async function saveIssue(e) {
-  e.preventDefault();
-
-  const selectedLabels = Array.from(inputLabels.selectedOptions).map(o => o.value);
-
-  if (editingIssueId) {
-    // Update existing issue
-    try {
-      const result = await invoke('update_issue', {
-        id: editingIssueId,
-        params: {
-          title: inputTitle.value,
-          body: inputBody.value || null,
-          issue_type: inputType.value
-        }
-      });
-      if (result.ok) {
-        closeIssueModal();
-        await loadIssues();
-        await loadIssueDetail(editingIssueId);
-      } else {
-        showError(result.error);
-      }
-    } catch (err) {
-      showError(err);
+async function openEditWindow(issueId) {
+  try {
+    const result = await invoke('open_edit_window', { issueId });
+    if (!result.ok) {
+      showError(result.error);
     }
-  } else {
-    // Create new issue
-    try {
-      const result = await invoke('create_issue', {
-        params: {
-          title: inputTitle.value,
-          body: inputBody.value || null,
-          issue_type: inputType.value,
-          labels: selectedLabels
-        }
-      });
-      if (result.ok) {
-        closeIssueModal();
-        await loadIssues();
-        selectIssue(result.data.id);
-      } else {
-        showError(result.error);
-      }
-    } catch (err) {
-      showError(err);
-    }
+  } catch (err) {
+    showError(err);
   }
 }
 
@@ -655,16 +760,11 @@ async function loadLabels() {
     const result = await invoke('list_labels');
     if (result.ok) {
       labels = result.data;
-      renderLabelsBar();
       updateLabelFilter();
     }
   } catch (err) {
     console.error('Error loading labels:', err);
   }
-}
-
-function renderLabelsBar() {
-  labelsList.innerHTML = labels.map(l => renderLabelPill(l)).join('');
 }
 
 function updateLabelFilter() {
@@ -673,76 +773,13 @@ function updateLabelFilter() {
     labels.map(l => `<option value="${escapeHtml(l.name)}" ${currentValue === l.name ? 'selected' : ''}>${escapeHtml(l.name)}</option>`).join('');
 }
 
-function openLabelsModal() {
-  renderExistingLabels();
-  newLabelName.value = '';
-  newLabelColor.value = '';
-  newLabelDesc.value = '';
-  labelsModalOverlay.style.display = 'flex';
-}
-
-function closeLabelsModal() {
-  labelsModalOverlay.style.display = 'none';
-}
-
-function renderExistingLabels() {
-  existingLabels.innerHTML = labels.map(l => `
-    <div class="label-row">
-      ${renderLabelPill(l)}
-      <button class="btn-icon delete-label" data-name="${escapeHtml(l.name)}" title="Delete label">🗑</button>
-    </div>
-  `).join('');
-
-  existingLabels.querySelectorAll('.delete-label').forEach(btn => {
-    btn.addEventListener('click', () => deleteLabel(btn.dataset.name));
-  });
-}
-
-async function createLabel() {
-  const name = newLabelName.value.trim();
-  if (!name) return;
-
-  const color = newLabelColor.value.trim() || null;
-  const description = newLabelDesc.value.trim() || null;
-
-  try {
-    const result = await invoke('create_label', { name, description, color });
-    if (result.ok) {
-      newLabelName.value = '';
-      newLabelColor.value = '';
-      newLabelDesc.value = '';
-      await loadLabels();
-      renderExistingLabels();
-    } else {
-      showError(result.error);
-    }
-  } catch (err) {
-    showError(err);
-  }
-}
-
-async function deleteLabel(name) {
-  if (!confirm(`Delete label "${name}"?`)) return;
-
-  try {
-    const result = await invoke('delete_label', { name });
-    if (result.ok) {
-      await loadLabels();
-      renderExistingLabels();
-    } else {
-      showError(result.error);
-    }
-  } catch (err) {
-    showError(err);
-  }
-}
-
 // ============ Sort ============
 
-function toggleSortOrder() {
+async function toggleSortOrder() {
   sortOrder = sortOrder === 'desc' ? 'asc' : 'desc';
   btnSortOrder.textContent = sortOrder === 'desc' ? '↓' : '↑';
-  loadIssues();
+  await loadIssues();
+  saveAppState();
 }
 
 // ============ Utilities ============
@@ -860,6 +897,44 @@ async function updateRecentMenu() {
     await invoke('update_recent_menu', { paths: recentDirectories });
   } catch (e) {
     console.error('Could not update recent menu:', e);
+  }
+}
+
+// ============ Window State ============
+
+async function saveWindowState() {
+  try {
+    const win = getCurrentWindow();
+    const size = await win.innerSize();
+    const position = await win.outerPosition();
+    const state = {
+      width: size.width,
+      height: size.height,
+      x: position.x,
+      y: position.y
+    };
+    localStorage.setItem(STORAGE_WINDOW_STATE, JSON.stringify(state));
+  } catch (e) {
+    console.error('Could not save window state:', e);
+  }
+}
+
+async function restoreWindowState() {
+  try {
+    const stored = localStorage.getItem(STORAGE_WINDOW_STATE);
+    if (!stored) return;
+
+    const state = JSON.parse(stored);
+    const win = getCurrentWindow();
+
+    if (state.width && state.height) {
+      await win.setSize({ type: 'Physical', width: state.width, height: state.height });
+    }
+    if (state.x !== undefined && state.y !== undefined) {
+      await win.setPosition({ type: 'Physical', x: state.x, y: state.y });
+    }
+  } catch (e) {
+    console.error('Could not restore window state:', e);
   }
 }
 
