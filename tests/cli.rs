@@ -1056,3 +1056,464 @@ fn cli_issue_list_shows_labels() {
         .success()
         .stdout(predicate::str::contains("bug"));
 }
+
+// Phase 4: Polish
+
+// 4.1: JSON output for issue view with labels and linked issues
+
+#[test]
+fn cli_issue_view_json_valid() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "JSON test", "--body", "Test body", "--type", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    let output = skis()
+        .args(["issue", "view", "1", "--json"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&output).expect("valid JSON");
+
+    // Required fields per PLAN.md JSON schema
+    assert_eq!(json["id"], 1);
+    assert_eq!(json["title"], "JSON test");
+    assert_eq!(json["body"], "Test body");
+    assert_eq!(json["type"], "bug");
+    assert_eq!(json["state"], "open");
+    assert!(json["state_reason"].is_null());
+    assert!(json["created_at"].is_string(), "created_at should be a timestamp string");
+    assert!(json["updated_at"].is_string(), "updated_at should be a timestamp string");
+    assert!(json["closed_at"].is_null());
+    assert!(json["deleted_at"].is_null());
+    assert!(json["labels"].is_array(), "labels should be an array");
+    assert!(json["linked_issues"].is_array(), "linked_issues should be an array");
+}
+
+#[test]
+fn cli_issue_view_json_includes_labels() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["label", "create", "bug", "--color", "ff0000", "--description", "Bug reports"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "create", "--title", "Labeled", "--label", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    let output = skis()
+        .args(["issue", "view", "1", "--json"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&output).expect("valid JSON");
+    assert!(json["labels"].is_array(), "labels should be an array");
+    let labels = json["labels"].as_array().unwrap();
+    assert_eq!(labels.len(), 1);
+
+    // Per PLAN.md, labels should include name and color
+    let label = &labels[0];
+    assert_eq!(label["name"], "bug");
+    assert_eq!(label["color"], "ff0000");
+    // description is optional but should be present if provided
+    assert_eq!(label["description"], "Bug reports");
+}
+
+#[test]
+fn cli_issue_view_json_includes_linked_issues() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "Issue A"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "create", "--title", "Issue B"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "link", "1", "2"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    let output = skis()
+        .args(["issue", "view", "1", "--json"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&output).expect("valid JSON");
+    assert!(json["linked_issues"].is_array(), "linked_issues should be an array");
+    let linked = json["linked_issues"].as_array().unwrap();
+    assert_eq!(linked.len(), 1);
+
+    // Per PLAN.md, linked_issues should be objects with id and title
+    let linked_issue = &linked[0];
+    assert_eq!(linked_issue["id"], 2);
+    assert_eq!(linked_issue["title"], "Issue B");
+}
+
+// 4.2: JSON output for issue list
+
+#[test]
+fn cli_issue_list_json_valid() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "First", "--type", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "create", "--title", "Second", "--body", "With body"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    let output = skis()
+        .args(["issue", "list", "--json"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&output).expect("valid JSON");
+    assert!(json.is_array(), "should be an array");
+    let issues = json.as_array().unwrap();
+    assert_eq!(issues.len(), 2);
+
+    // Verify each issue has required fields
+    for issue in issues {
+        assert!(issue["id"].is_i64(), "id should be an integer");
+        assert!(issue["title"].is_string(), "title should be a string");
+        assert!(issue["type"].is_string(), "type should be a string");
+        assert!(issue["state"].is_string(), "state should be a string");
+        assert!(issue["created_at"].is_string(), "created_at should be a timestamp");
+        assert!(issue["updated_at"].is_string(), "updated_at should be a timestamp");
+    }
+}
+
+// 4.3: JSON output for label list
+
+#[test]
+fn cli_label_list_json_valid() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["label", "create", "bug", "--color", "ff0000"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["label", "create", "feature", "--description", "New feature"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    let output = skis()
+        .args(["label", "list", "--json"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+
+    let json: serde_json::Value = serde_json::from_slice(&output).expect("valid JSON");
+    assert!(json.is_array(), "should be an array");
+    let labels = json.as_array().unwrap();
+    assert_eq!(labels.len(), 2);
+
+    // Verify label objects have required fields
+    for label in labels {
+        assert!(label["id"].is_i64(), "id should be an integer");
+        assert!(label["name"].is_string(), "name should be a string");
+        // color and description can be null
+    }
+
+    // Find bug label and verify its color
+    let bug_label = labels.iter().find(|l| l["name"] == "bug").expect("bug label");
+    assert_eq!(bug_label["color"], "ff0000");
+
+    // Find feature label and verify its description
+    let feature_label = labels.iter().find(|l| l["name"] == "feature").expect("feature label");
+    assert_eq!(feature_label["description"], "New feature");
+}
+
+// 4.4: Close with comment
+
+#[test]
+fn cli_issue_close_with_comment() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "To close"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "close", "1", "--comment", "Fixed in commit abc123"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Closed issue #1"));
+
+    // Verify comment was added
+    skis()
+        .args(["issue", "view", "1", "--comments"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Fixed in commit abc123"));
+}
+
+// 4.5: Body from file
+
+#[test]
+fn cli_issue_create_body_from_file() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    // Create a file with body content
+    let body_file = dir.path().join("body.txt");
+    std::fs::write(&body_file, "This is the body from a file.\nWith multiple lines.").unwrap();
+
+    skis()
+        .args(["issue", "create", "--title", "From file", "--body-file", body_file.to_str().unwrap()])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "view", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("This is the body from a file"))
+        .stdout(predicate::str::contains("With multiple lines"));
+}
+
+#[test]
+fn cli_issue_create_body_from_stdin() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "From stdin", "--body-file", "-"])
+        .current_dir(dir.path())
+        .write_stdin("Body from stdin input")
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "view", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Body from stdin input"));
+}
+
+#[test]
+fn cli_issue_edit_body_from_file() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "To edit", "--body", "Original body"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    let body_file = dir.path().join("new_body.txt");
+    std::fs::write(&body_file, "Updated body from file").unwrap();
+
+    skis()
+        .args(["issue", "edit", "1", "--body-file", body_file.to_str().unwrap()])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "view", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Updated body from file"))
+        .stdout(predicate::str::contains("Original body").not());
+}
+
+#[test]
+fn cli_issue_comment_body_from_file() {
+    let dir = TempDir::new().unwrap();
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    skis()
+        .args(["issue", "create", "--title", "To comment"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    let comment_file = dir.path().join("comment.txt");
+    std::fs::write(&comment_file, "Comment from file").unwrap();
+
+    skis()
+        .args(["issue", "comment", "1", "--body-file", comment_file.to_str().unwrap()])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    skis()
+        .args(["issue", "view", "1", "--comments"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Comment from file"));
+}
+
+// 4.10: Full integration test
+
+#[test]
+fn full_issue_lifecycle() {
+    let dir = TempDir::new().unwrap();
+
+    // init
+    skis().arg("init").current_dir(dir.path()).assert().success();
+
+    // create label
+    skis()
+        .args(["label", "create", "bug", "--color", "ff0000", "--description", "Bug reports"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // create issue with label
+    skis()
+        .args(["issue", "create", "--title", "Critical bug", "--body", "Something broke", "--label", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // view
+    skis()
+        .args(["issue", "view", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Critical bug"))
+        .stdout(predicate::str::contains("bug"));
+
+    // edit
+    skis()
+        .args(["issue", "edit", "1", "--title", "Critical bug (updated)"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // comment
+    skis()
+        .args(["issue", "comment", "1", "--body", "Working on this"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // create another issue for linking
+    skis()
+        .args(["issue", "create", "--title", "Related issue"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // link
+    skis()
+        .args(["issue", "link", "1", "2"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // verify link shows in view
+    skis()
+        .args(["issue", "view", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Linked: #2"));
+
+    // close
+    skis()
+        .args(["issue", "close", "1", "--reason", "completed"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // reopen
+    skis()
+        .args(["issue", "reopen", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // delete
+    skis()
+        .args(["issue", "delete", "1", "--yes"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // restore
+    skis()
+        .args(["issue", "restore", "1"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+
+    // list with filters
+    skis()
+        .args(["issue", "list", "--state", "open", "--label", "bug"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Critical bug"));
+
+    // search
+    skis()
+        .args(["issue", "list", "--search", "Critical"])
+        .current_dir(dir.path())
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Critical bug"));
+}
