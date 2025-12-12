@@ -79,7 +79,15 @@
         <div class="detail-content" id="detail-content" style="display: none;">
           <div class="detail-header">
             <span class="issue-id" id="detail-id">#1</span>
-            <h2 class="issue-title" id="detail-title">Issue Title</h2>
+            <div class="detail-title-section">
+              <h2 class="issue-title" id="detail-title">Issue Title</h2>
+              <button class="btn-icon btn-edit-title" id="btn-edit-title" title="Edit title">✎</button>
+              <div class="detail-title-edit" id="detail-title-edit" style="display: none;">
+                <input type="text" id="title-edit-input" placeholder="Issue title...">
+                <button class="btn-secondary btn-small" id="btn-title-cancel">Cancel</button>
+                <button class="btn-primary btn-small" id="btn-title-save">Save</button>
+              </div>
+            </div>
             <div class="detail-actions">
               <button id="btn-edit" class="btn-link">edit</button>
               <button id="btn-close" class="btn-link">close</button>
@@ -87,37 +95,81 @@
               <button id="btn-delete" class="btn-link btn-link-danger">delete</button>
             </div>
           </div>
-          <div class="detail-meta">
-            <span class="badge badge-type" id="detail-type">task</span>
-            <span class="badge badge-state" id="detail-state">open</span>
-            <span class="detail-timestamps" id="detail-timestamps">Created: now</span>
+          <div class="detail-labels-section">
+            <div class="labels-header">
+              <h3>Labels</h3>
+              <button class="btn-icon btn-edit-labels" id="btn-edit-labels" title="Edit labels">✎</button>
+            </div>
+            <div class="detail-labels" id="detail-labels">
+              <!-- Labels will be rendered here -->
+            </div>
+            <div class="labels-edit-form" id="labels-edit-form" style="display: none;">
+              <div class="labels-dropdown-inline" id="labels-dropdown-inline">
+                <div class="labels-menu-inline" id="labels-menu-inline">
+                  <!-- Label checkboxes will be populated dynamically -->
+                </div>
+              </div>
+              <div class="labels-edit-actions">
+                <button class="btn-secondary btn-small" id="btn-labels-done">Done</button>
+              </div>
+            </div>
           </div>
-          <div class="detail-labels" id="detail-labels">
-            <!-- Labels will be rendered here -->
-          </div>
-          <div class="detail-body" id="detail-body">
-            <!-- Issue body content -->
+          <div class="detail-body-section">
+            <div class="detail-body-header">
+              <span class="detail-body-label">Description</span>
+              <button class="btn-icon btn-edit-body" id="btn-edit-body" title="Edit">✎</button>
+            </div>
+            <div class="detail-body markdown-body" id="detail-body">
+              <!-- Issue body content -->
+            </div>
+            <div class="detail-body-edit" id="detail-body-edit" style="display: none;">
+              <div class="body-edit-tabs">
+                <button type="button" class="body-edit-tab active" id="body-edit-tab-edit">Edit</button>
+                <button type="button" class="body-edit-tab" id="body-edit-tab-preview">Preview</button>
+              </div>
+              <textarea id="body-edit-input" placeholder="Describe the issue... (Markdown supported)"></textarea>
+              <div id="body-edit-preview" class="body-edit-preview markdown-body"></div>
+              <div class="body-edit-actions">
+                <button class="btn-secondary" id="btn-body-cancel">Cancel</button>
+                <button class="btn-primary" id="btn-body-save">Save</button>
+              </div>
+            </div>
           </div>
           <div class="detail-links" id="detail-links">
-            <h3>Linked Issues</h3>
+            <div class="links-header">
+              <h3>Linked Issues</h3>
+              <button class="btn-icon btn-new-link" id="btn-new-link" title="Link issue">+</button>
+            </div>
             <div class="linked-issues" id="linked-issues">
               <!-- Linked issues will be rendered here -->
             </div>
-            <div class="link-actions">
+            <div class="link-form" id="link-form" style="display: none;">
               <input type="number" id="link-issue-id" placeholder="Issue #" min="1">
-              <button id="btn-link" class="btn-secondary">Link</button>
+              <button id="btn-link" class="btn-secondary btn-small">Link</button>
+              <button id="btn-cancel-link" class="btn-secondary btn-small">Cancel</button>
             </div>
           </div>
           <div class="detail-comments" id="detail-comments">
-            <h3>Comments</h3>
+            <div class="comments-header">
+              <h3>Comments</h3>
+              <button class="btn-icon btn-new-comment" id="btn-new-comment" title="Add comment">+</button>
+            </div>
             <div class="comments-list" id="comments-list">
               <!-- Comments will be rendered here -->
             </div>
-            <div class="comment-form">
-              <textarea id="comment-input" placeholder="Add a comment..." rows="4"></textarea>
-              <button id="btn-add-comment" class="btn-primary">Add Comment</button>
+            <div class="comment-form" id="comment-form" style="display: none;">
+              <textarea id="comment-input" placeholder="Add a comment... (Markdown supported)" rows="4"></textarea>
+              <div class="comment-form-actions">
+                <button id="btn-cancel-comment" class="btn-secondary">Cancel</button>
+                <button id="btn-add-comment" class="btn-primary">Add Comment</button>
+              </div>
             </div>
           </div>
+        </div>
+        <div class="detail-footer" id="detail-footer" style="display: none;">
+          <span class="label-pill" id="detail-type">task</span>
+          <span class="label-pill label-pill-state" id="detail-state">open</span>
+          <span class="detail-timestamps" id="detail-timestamps">Created: now</span>
         </div>
       </section>
     </main>

@@ -51,18 +51,42 @@ const paneDivider = document.getElementById('pane-divider');
 // Issue detail
 const detailEmpty = document.getElementById('detail-empty');
 const detailContent = document.getElementById('detail-content');
+const detailFooter = document.getElementById('detail-footer');
 const detailId = document.getElementById('detail-id');
 const detailTitle = document.getElementById('detail-title');
+const detailTitleEdit = document.getElementById('detail-title-edit');
+const titleEditInput = document.getElementById('title-edit-input');
+const btnEditTitle = document.getElementById('btn-edit-title');
+const btnTitleCancel = document.getElementById('btn-title-cancel');
+const btnTitleSave = document.getElementById('btn-title-save');
 const detailType = document.getElementById('detail-type');
 const detailState = document.getElementById('detail-state');
 const detailTimestamps = document.getElementById('detail-timestamps');
 const detailLabels = document.getElementById('detail-labels');
+const labelsEditForm = document.getElementById('labels-edit-form');
+const labelsMenuInline = document.getElementById('labels-menu-inline');
+const btnEditLabels = document.getElementById('btn-edit-labels');
+const btnLabelsDone = document.getElementById('btn-labels-done');
 const detailBody = document.getElementById('detail-body');
+const detailBodyEdit = document.getElementById('detail-body-edit');
+const bodyEditInput = document.getElementById('body-edit-input');
+const bodyEditPreview = document.getElementById('body-edit-preview');
+const btnEditBody = document.getElementById('btn-edit-body');
+const btnBodyCancel = document.getElementById('btn-body-cancel');
+const btnBodySave = document.getElementById('btn-body-save');
+const bodyEditTabEdit = document.getElementById('body-edit-tab-edit');
+const bodyEditTabPreview = document.getElementById('body-edit-tab-preview');
 const linkedIssues = document.getElementById('linked-issues');
+const linkForm = document.getElementById('link-form');
 const linkIssueId = document.getElementById('link-issue-id');
+const btnNewLink = document.getElementById('btn-new-link');
 const btnLink = document.getElementById('btn-link');
+const btnCancelLink = document.getElementById('btn-cancel-link');
 const commentsList = document.getElementById('comments-list');
+const commentForm = document.getElementById('comment-form');
 const commentInput = document.getElementById('comment-input');
+const btnNewComment = document.getElementById('btn-new-comment');
+const btnCancelComment = document.getElementById('btn-cancel-comment');
 const btnAddComment = document.getElementById('btn-add-comment');
 
 // Detail actions
@@ -96,6 +120,10 @@ marked.setOptions({
 });
 
 async function init() {
+  // Get window reference once
+  const win = getCurrentWindow();
+  const isMainWindow = win.label === 'main';
+
   // Restore window size/position
   await restoreWindowState();
 
@@ -103,7 +131,6 @@ async function init() {
   restoreSidebarState();
 
   // Save window state on resize/move
-  const win = getCurrentWindow();
   win.onResized(debounce(saveWindowState, 500));
   win.onMoved(debounce(saveWindowState, 500));
 
@@ -142,6 +169,14 @@ async function init() {
     toggleSidebar();
   });
 
+  await listen('menu-new-database', async () => {
+    await createNewDatabase();
+  });
+
+  await listen('menu-export-json', async () => {
+    await exportToJson();
+  });
+
   // Listen for issue saved from edit window
   await listen('issue-saved', async (event) => {
     const { id } = event.payload;
@@ -152,10 +187,12 @@ async function init() {
     }
   });
 
-  // Check for saved directory
-  const savedDir = localStorage.getItem('skis_directory');
-  if (savedDir) {
-    await selectDirectory(savedDir);
+  // Only restore directory for main window - new windows start blank
+  if (isMainWindow) {
+    const savedDir = localStorage.getItem('skis_directory');
+    if (savedDir) {
+      await selectDirectory(savedDir, true);
+    }
   }
 
   setupEventListeners();
@@ -186,8 +223,48 @@ function setupEventListeners() {
   btnClose.addEventListener('click', showCloseModal);
   btnReopen.addEventListener('click', reopenIssue);
   btnDelete.addEventListener('click', deleteIssue);
+  btnNewLink.addEventListener('click', toggleLinkForm);
   btnLink.addEventListener('click', linkIssue);
+  btnCancelLink.addEventListener('click', hideLinkForm);
+  btnNewComment.addEventListener('click', toggleCommentForm);
+  btnCancelComment.addEventListener('click', hideCommentForm);
   btnAddComment.addEventListener('click', addComment);
+
+  // Labels inline editing
+  btnEditLabels.addEventListener('click', toggleEditLabels);
+  btnLabelsDone.addEventListener('click', finishEditLabels);
+
+  // Title inline editing
+  btnEditTitle.addEventListener('click', toggleEditTitle);
+  btnTitleCancel.addEventListener('click', cancelEditTitle);
+  btnTitleSave.addEventListener('click', saveEditTitle);
+  titleEditInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveEditTitle();
+    } else if (e.key === 'Escape') {
+      cancelEditTitle();
+    }
+  });
+
+  // Body inline editing
+  btnEditBody.addEventListener('click', toggleEditBody);
+  btnBodyCancel.addEventListener('click', cancelEditBody);
+  btnBodySave.addEventListener('click', saveEditBody);
+  bodyEditTabEdit.addEventListener('click', () => {
+    bodyEditTabEdit.classList.add('active');
+    bodyEditTabPreview.classList.remove('active');
+    bodyEditInput.style.display = 'block';
+    bodyEditPreview.classList.remove('active');
+  });
+  bodyEditTabPreview.addEventListener('click', () => {
+    bodyEditTabPreview.classList.add('active');
+    bodyEditTabEdit.classList.remove('active');
+    bodyEditInput.style.display = 'none';
+    bodyEditPreview.classList.add('active');
+    const content = bodyEditInput.value.trim();
+    bodyEditPreview.innerHTML = content ? marked.parse(content) : '';
+  });
 
   // Close modal
   closeModalOverlay.querySelectorAll('.btn-close-modal').forEach(btn => {
@@ -200,6 +277,9 @@ function setupEventListeners() {
 
   // Keyboard shortcuts
   document.addEventListener('keydown', e => {
+    // Don't handle shortcuts when in input fields
+    const inInput = e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT';
+
     if (e.key === 'Escape') {
       if (closeModalOverlay.style.display !== 'none') closeModalOverlay.style.display = 'none';
     }
@@ -207,6 +287,26 @@ function setupEventListeners() {
     if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
       e.preventDefault();
       openEditWindow(null);
+    }
+
+    // Issue list navigation (only when not in input)
+    if (!inInput && issues.length > 0) {
+      if (e.key === 'ArrowDown' || e.key === 'j') {
+        e.preventDefault();
+        navigateIssueList(1);
+      } else if (e.key === 'ArrowUp' || e.key === 'k') {
+        e.preventDefault();
+        navigateIssueList(-1);
+      } else if (e.key === 'Enter' && currentIssue) {
+        e.preventDefault();
+        openEditWindow(currentIssue.id);
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        navigateIssueList(-Infinity);
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        navigateIssueList(Infinity);
+      }
     }
   });
 
@@ -241,7 +341,7 @@ async function browseDirectory() {
   }
 }
 
-async function selectDirectory(path) {
+async function selectDirectory(path, restoreState = false) {
   try {
     const result = await invoke('select_directory', { path });
     if (result.ok) {
@@ -254,8 +354,8 @@ async function selectDirectory(path) {
       if (result.data.initialized) {
         btnInit.style.display = 'none';
 
-        // Restore app state before loading (filters, sort)
-        const savedState = restoreAppState();
+        // Restore app state before loading (filters, sort) - only for main window on startup
+        const savedState = restoreState ? restoreAppState() : null;
 
         await loadIssues();
         await loadLabels();
@@ -296,12 +396,79 @@ async function initRepository() {
   }
 }
 
+async function createNewDatabase() {
+  try {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: 'Choose location for new SKIS database'
+    });
+    if (selected) {
+      // Select the directory first
+      const selectResult = await invoke('select_directory', { path: selected });
+      if (selectResult.ok) {
+        if (selectResult.data.initialized) {
+          // Already has a database
+          if (!confirm('This directory already contains a SKIS database. Open it instead?')) {
+            return;
+          }
+          await selectDirectory(selected);
+        } else {
+          // Initialize new database
+          const initResult = await invoke('init_repository');
+          if (initResult.ok) {
+            directoryPath.value = shortenPath(selected);
+            localStorage.setItem('skis_directory', selected);
+            addRecentDirectory(selected);
+            btnInit.style.display = 'none';
+            await loadIssues();
+            await loadLabels();
+          } else {
+            showError(initResult.error);
+          }
+        }
+      } else {
+        showError(selectResult.error);
+      }
+    }
+  } catch (err) {
+    console.error('Error creating database:', err);
+  }
+}
+
 async function reload() {
   const currentId = currentIssue?.id;
   await loadIssues();
   await loadLabels();
   if (currentId) {
     await loadIssueDetail(currentId);
+  }
+}
+
+async function exportToJson() {
+  try {
+    const result = await invoke('export_json');
+    if (result.ok) {
+      const json = JSON.stringify(result.data, null, 2);
+
+      // Use save dialog to get file path
+      const { save } = window.__TAURI__.dialog;
+      const filePath = await save({
+        defaultPath: 'skis-export.json',
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      });
+
+      if (filePath) {
+        // Write the file
+        const { writeTextFile } = window.__TAURI__.fs;
+        await writeTextFile(filePath, json);
+        alert(`Exported ${result.data.issues.length} issues to ${filePath}`);
+      }
+    } else {
+      showError(result.error);
+    }
+  } catch (err) {
+    showError(err);
   }
 }
 
@@ -498,6 +665,46 @@ function renderIssueList() {
   });
 }
 
+function navigateIssueList(direction) {
+  if (issues.length === 0) return;
+
+  let currentIndex = currentIssue ? issues.findIndex(i => i.id === currentIssue.id) : -1;
+
+  let newIndex;
+  if (direction === -Infinity) {
+    // Home - go to first
+    newIndex = 0;
+  } else if (direction === Infinity) {
+    // End - go to last
+    newIndex = issues.length - 1;
+  } else {
+    // Relative navigation
+    if (currentIndex === -1) {
+      newIndex = direction > 0 ? 0 : issues.length - 1;
+    } else {
+      newIndex = currentIndex + direction;
+    }
+  }
+
+  // Clamp to valid range
+  newIndex = Math.max(0, Math.min(issues.length - 1, newIndex));
+
+  if (newIndex !== currentIndex && issues[newIndex]) {
+    selectIssue(issues[newIndex].id);
+
+    // Scroll the selected item into view
+    const selectedEl = issueList.querySelector(`[data-id="${issues[newIndex].id}"]`);
+    if (selectedEl) {
+      selectedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
+    // Load more issues if near the end
+    if (newIndex >= issues.length - 5 && hasMoreIssues && !isLoadingMore) {
+      loadIssues(true);
+    }
+  }
+}
+
 async function selectIssue(id) {
   const issue = issues.find(i => i.id === id);
 
@@ -509,8 +716,26 @@ async function selectIssue(id) {
   // Always load the detail - even if not in current filtered list
   await loadIssueDetail(id);
 
+  // Update window title to show current issue
+  await updateWindowTitle();
+
   // Save app state when issue selection changes
   saveAppState();
+}
+
+async function updateWindowTitle() {
+  const win = getCurrentWindow();
+  let title = 'SKIS';
+  if (currentIssue) {
+    // Show first ~30 chars of issue title
+    const issueTitle = currentIssue.title.length > 30
+      ? currentIssue.title.substring(0, 30) + '...'
+      : currentIssue.title;
+    title = `#${currentIssue.id} ${issueTitle} - SKIS`;
+  }
+  await win.setTitle(title);
+  // Refresh the menu to update window list
+  await invoke('refresh_window_menu');
 }
 
 // ============ Issue Detail ============
@@ -534,18 +759,20 @@ function renderIssueDetail() {
   if (!currentIssue) {
     detailEmpty.style.display = 'flex';
     detailContent.style.display = 'none';
+    detailFooter.style.display = 'none';
     return;
   }
 
   detailEmpty.style.display = 'none';
   detailContent.style.display = 'block';
+  detailFooter.style.display = 'flex';
 
   detailId.textContent = `#${currentIssue.id}`;
   detailTitle.textContent = currentIssue.title;
   detailType.textContent = currentIssue.type;
-  detailType.className = `badge badge-type ${currentIssue.type}`;
+  detailType.className = `label-pill type-${currentIssue.type}`;
   detailState.textContent = currentIssue.state;
-  detailState.className = `badge badge-state ${currentIssue.state}`;
+  detailState.className = `label-pill label-pill-state ${currentIssue.state}`;
   detailTimestamps.textContent = formatTimestamps(currentIssue);
 
   // Render body as Markdown
@@ -594,6 +821,36 @@ function renderIssueDetail() {
     btnClose.style.display = 'none';
     btnReopen.style.display = 'inline-block';
   }
+
+  // Reset labels edit state (in case it was open for a different issue)
+  labelsEditForm.style.display = 'none';
+  detailLabels.style.display = 'flex';
+  btnEditLabels.textContent = '✎';
+  btnEditLabels.title = 'Edit labels';
+
+  // Reset title edit state (in case it was open for a different issue)
+  detailTitleEdit.style.display = 'none';
+  detailTitle.style.display = 'block';
+  btnEditTitle.textContent = '✎';
+  btnEditTitle.title = 'Edit title';
+
+  // Reset body edit state (in case it was open for a different issue)
+  detailBodyEdit.style.display = 'none';
+  detailBody.style.display = 'block';
+  btnEditBody.textContent = '✎';
+  btnEditBody.title = 'Edit';
+
+  // Reset link form state
+  linkForm.style.display = 'none';
+  linkIssueId.value = '';
+  btnNewLink.textContent = '+';
+  btnNewLink.title = 'Link issue';
+
+  // Reset comment form state
+  commentForm.style.display = 'none';
+  commentInput.value = '';
+  btnNewComment.textContent = '+';
+  btnNewComment.title = 'Add comment';
 }
 
 async function loadComments(issueId) {
@@ -614,11 +871,50 @@ function renderComments(comments) {
   }
 
   commentsList.innerHTML = comments.map(c => `
-    <div class="comment-item">
-      <div class="comment-meta">${formatDateTime(c.created_at)}</div>
+    <div class="comment-item" data-comment-id="${c.id}">
+      <div class="comment-header">
+        <div class="comment-meta">
+          ${formatDateTime(c.created_at)}
+          ${c.updated_at && c.updated_at !== c.created_at ? '<span class="comment-edited">(edited)</span>' : ''}
+        </div>
+        <div class="comment-actions">
+          <button class="btn-icon btn-edit-comment" data-id="${c.id}" title="Edit">✎</button>
+          <button class="btn-icon btn-delete-comment" data-id="${c.id}" title="Delete">×</button>
+        </div>
+      </div>
       <div class="comment-body markdown-body">${marked.parse(c.body)}</div>
+      <div class="comment-edit-form" style="display: none;">
+        <textarea class="comment-edit-input">${escapeHtml(c.body)}</textarea>
+        <div class="comment-edit-actions">
+          <button class="btn-secondary btn-cancel-edit">Cancel</button>
+          <button class="btn-primary btn-save-edit">Save</button>
+        </div>
+      </div>
     </div>
   `).join('');
+
+  // Add event handlers
+  commentsList.querySelectorAll('.btn-edit-comment').forEach(btn => {
+    btn.addEventListener('click', () => startEditComment(parseInt(btn.dataset.id)));
+  });
+
+  commentsList.querySelectorAll('.btn-delete-comment').forEach(btn => {
+    btn.addEventListener('click', () => deleteComment(parseInt(btn.dataset.id)));
+  });
+
+  commentsList.querySelectorAll('.btn-cancel-edit').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const item = btn.closest('.comment-item');
+      cancelEditComment(item);
+    });
+  });
+
+  commentsList.querySelectorAll('.btn-save-edit').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const item = btn.closest('.comment-item');
+      saveEditComment(parseInt(item.dataset.commentId), item);
+    });
+  });
 }
 
 // ============ Issue Actions ============
@@ -695,6 +991,28 @@ async function deleteIssue() {
   }
 }
 
+function showLinkForm() {
+  linkForm.style.display = 'flex';
+  btnNewLink.textContent = '−';
+  btnNewLink.title = 'Cancel';
+  linkIssueId.focus();
+}
+
+function hideLinkForm() {
+  linkForm.style.display = 'none';
+  linkIssueId.value = '';
+  btnNewLink.textContent = '+';
+  btnNewLink.title = 'Link issue';
+}
+
+function toggleLinkForm() {
+  if (linkForm.style.display === 'none' || linkForm.style.display === '') {
+    showLinkForm();
+  } else {
+    hideLinkForm();
+  }
+}
+
 async function linkIssue() {
   if (!currentIssue) return;
   const targetId = parseInt(linkIssueId.value);
@@ -707,6 +1025,9 @@ async function linkIssue() {
     });
     if (result.ok) {
       linkIssueId.value = '';
+      linkForm.style.display = 'none';
+      btnNewLink.textContent = '+';
+      btnNewLink.title = 'Link issue';
       await loadIssueDetail(currentIssue.id);
     } else {
       showError(result.error);
@@ -734,6 +1055,300 @@ async function unlinkIssue(targetId) {
   }
 }
 
+// ============ Labels Inline Editing ============
+
+function startEditLabels() {
+  if (!currentIssue) return;
+
+  // Build the labels menu with current selection
+  const currentLabelNames = new Set(currentIssue.labels.map(l => l.name));
+
+  if (labels.length === 0) {
+    labelsMenuInline.innerHTML = '<span style="color: var(--color-text-muted); font-size: 0.8rem;">No labels defined</span>';
+  } else {
+    labelsMenuInline.innerHTML = labels.map(l => {
+      const isSelected = currentLabelNames.has(l.name);
+      return `
+        <label class="label-toggle ${isSelected ? 'selected' : ''}" data-label="${escapeHtml(l.name)}">
+          <input type="checkbox" value="${escapeHtml(l.name)}" ${isSelected ? 'checked' : ''}>
+          ${renderLabelPill(l)}
+        </label>
+      `;
+    }).join('');
+
+    // Add change handlers
+    labelsMenuInline.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => toggleLabel(cb.value, cb.checked));
+    });
+  }
+
+  // Hide labels display, show edit form
+  detailLabels.style.display = 'none';
+  labelsEditForm.style.display = 'block';
+
+  // Change pencil to X
+  btnEditLabels.textContent = '×';
+  btnEditLabels.title = 'Cancel';
+}
+
+async function toggleLabel(labelName, add) {
+  if (!currentIssue) return;
+
+  try {
+    let result;
+    if (add) {
+      result = await invoke('add_label_to_issue', { issueId: currentIssue.id, labelName });
+    } else {
+      result = await invoke('remove_label_from_issue', { issueId: currentIssue.id, labelName });
+    }
+
+    if (result.ok) {
+      // Update local state
+      if (add) {
+        const label = labels.find(l => l.name === labelName);
+        if (label) {
+          currentIssue.labels.push(label);
+        }
+      } else {
+        currentIssue.labels = currentIssue.labels.filter(l => l.name !== labelName);
+      }
+
+      // Update the checkbox label styling
+      const labelEl = labelsMenuInline.querySelector(`[data-label="${labelName}"]`);
+      if (labelEl) {
+        labelEl.classList.toggle('selected', add);
+      }
+
+      // Update the issue in the list
+      const idx = issues.findIndex(i => i.id === currentIssue.id);
+      if (idx !== -1) {
+        issues[idx] = currentIssue;
+        renderIssueList();
+      }
+    } else {
+      showError(result.error);
+      // Revert checkbox state
+      const cb = labelsMenuInline.querySelector(`input[value="${labelName}"]`);
+      if (cb) cb.checked = !add;
+    }
+  } catch (err) {
+    showError(err);
+  }
+}
+
+function finishEditLabels() {
+  // Update the labels display
+  detailLabels.innerHTML = currentIssue.labels.map(l => renderLabelPill(l)).join('');
+
+  // Hide edit form, show labels display
+  labelsEditForm.style.display = 'none';
+  detailLabels.style.display = 'flex';
+
+  // Restore pencil icon
+  btnEditLabels.textContent = '✎';
+  btnEditLabels.title = 'Edit labels';
+}
+
+function toggleEditLabels() {
+  if (labelsEditForm.style.display === 'none' || labelsEditForm.style.display === '') {
+    startEditLabels();
+  } else {
+    finishEditLabels();
+  }
+}
+
+// ============ Title Inline Editing ============
+
+function startEditTitle() {
+  if (!currentIssue) return;
+
+  // Hide the title, show edit form
+  detailTitle.style.display = 'none';
+  detailTitleEdit.style.display = 'flex';
+
+  // Change pencil to X
+  btnEditTitle.textContent = '×';
+  btnEditTitle.title = 'Cancel';
+
+  // Populate input with current title
+  titleEditInput.value = currentIssue.title;
+
+  // Focus and select all
+  titleEditInput.focus();
+  titleEditInput.select();
+}
+
+function cancelEditTitle() {
+  // Hide edit form, show title
+  detailTitleEdit.style.display = 'none';
+  detailTitle.style.display = 'block';
+
+  // Restore pencil icon
+  btnEditTitle.textContent = '✎';
+  btnEditTitle.title = 'Edit title';
+}
+
+function toggleEditTitle() {
+  if (detailTitleEdit.style.display === 'none' || detailTitleEdit.style.display === '') {
+    startEditTitle();
+  } else {
+    cancelEditTitle();
+  }
+}
+
+async function saveEditTitle() {
+  if (!currentIssue) return;
+
+  const title = titleEditInput.value.trim();
+  if (!title) {
+    showError('Title cannot be empty');
+    return;
+  }
+
+  try {
+    const result = await invoke('update_issue', {
+      id: currentIssue.id,
+      params: { title }
+    });
+    if (result.ok) {
+      currentIssue = result.data;
+      detailTitle.textContent = currentIssue.title;
+
+      // Hide edit form, show title
+      detailTitleEdit.style.display = 'none';
+      detailTitle.style.display = 'block';
+
+      // Restore pencil icon
+      btnEditTitle.textContent = '✎';
+      btnEditTitle.title = 'Edit title';
+
+      // Update the issue in the list
+      const idx = issues.findIndex(i => i.id === currentIssue.id);
+      if (idx !== -1) {
+        issues[idx] = currentIssue;
+        renderIssueList();
+      }
+
+      // Update window title
+      await updateWindowTitle();
+    } else {
+      showError(result.error);
+    }
+  } catch (err) {
+    showError(err);
+  }
+}
+
+// ============ Body Inline Editing ============
+
+function startEditBody() {
+  if (!currentIssue) return;
+
+  // Hide the rendered body, show edit form
+  detailBody.style.display = 'none';
+  detailBodyEdit.style.display = 'block';
+
+  // Change pencil to X
+  btnEditBody.textContent = '×';
+  btnEditBody.title = 'Cancel';
+
+  // Populate textarea with current body
+  bodyEditInput.value = currentIssue.body || '';
+
+  // Reset to Edit tab
+  bodyEditTabEdit.classList.add('active');
+  bodyEditTabPreview.classList.remove('active');
+  bodyEditInput.style.display = 'block';
+  bodyEditPreview.classList.remove('active');
+
+  // Focus the textarea
+  bodyEditInput.focus();
+}
+
+function cancelEditBody() {
+  // Hide edit form, show rendered body
+  detailBodyEdit.style.display = 'none';
+  detailBody.style.display = 'block';
+
+  // Restore pencil icon
+  btnEditBody.textContent = '✎';
+  btnEditBody.title = 'Edit';
+}
+
+function toggleEditBody() {
+  if (detailBodyEdit.style.display === 'none' || detailBodyEdit.style.display === '') {
+    startEditBody();
+  } else {
+    cancelEditBody();
+  }
+}
+
+async function saveEditBody() {
+  if (!currentIssue) return;
+
+  const body = bodyEditInput.value.trim() || null;
+
+  try {
+    const result = await invoke('update_issue', {
+      id: currentIssue.id,
+      params: {
+        body: body
+      }
+    });
+    if (result.ok) {
+      // Update the current issue and re-render
+      currentIssue = result.data;
+
+      // Re-render the body
+      if (currentIssue.body) {
+        detailBody.innerHTML = marked.parse(currentIssue.body);
+      } else {
+        detailBody.innerHTML = '';
+      }
+
+      // Hide edit form, show rendered body
+      detailBodyEdit.style.display = 'none';
+      detailBody.style.display = 'block';
+
+      // Restore pencil icon
+      btnEditBody.textContent = '✎';
+      btnEditBody.title = 'Edit';
+
+      // Update the issue in the list if needed
+      const idx = issues.findIndex(i => i.id === currentIssue.id);
+      if (idx !== -1) {
+        issues[idx] = currentIssue;
+      }
+    } else {
+      showError(result.error);
+    }
+  } catch (err) {
+    showError(err);
+  }
+}
+
+function showCommentForm() {
+  commentForm.style.display = 'flex';
+  btnNewComment.textContent = '−';
+  btnNewComment.title = 'Cancel';
+  commentInput.focus();
+}
+
+function hideCommentForm() {
+  commentForm.style.display = 'none';
+  commentInput.value = '';
+  btnNewComment.textContent = '+';
+  btnNewComment.title = 'Add comment';
+}
+
+function toggleCommentForm() {
+  if (commentForm.style.display === 'none' || commentForm.style.display === '') {
+    showCommentForm();
+  } else {
+    hideCommentForm();
+  }
+}
+
 async function addComment() {
   if (!currentIssue || !commentInput.value.trim()) return;
 
@@ -744,6 +1359,66 @@ async function addComment() {
     });
     if (result.ok) {
       commentInput.value = '';
+      commentForm.style.display = 'none';
+      btnNewComment.textContent = '+';
+      btnNewComment.title = 'Add comment';
+      await loadComments(currentIssue.id);
+    } else {
+      showError(result.error);
+    }
+  } catch (err) {
+    showError(err);
+  }
+}
+
+function startEditComment(commentId) {
+  const item = commentsList.querySelector(`[data-comment-id="${commentId}"]`);
+  if (!item) return;
+
+  // Hide body, show edit form
+  item.querySelector('.comment-body').style.display = 'none';
+  item.querySelector('.comment-actions').style.display = 'none';
+  item.querySelector('.comment-edit-form').style.display = 'block';
+
+  // Focus the textarea
+  const textarea = item.querySelector('.comment-edit-input');
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+}
+
+function cancelEditComment(item) {
+  item.querySelector('.comment-body').style.display = 'block';
+  item.querySelector('.comment-actions').style.display = 'flex';
+  item.querySelector('.comment-edit-form').style.display = 'none';
+}
+
+async function saveEditComment(commentId, item) {
+  const textarea = item.querySelector('.comment-edit-input');
+  const body = textarea.value.trim();
+
+  if (!body) {
+    showError('Comment cannot be empty');
+    return;
+  }
+
+  try {
+    const result = await invoke('update_comment', { commentId, body });
+    if (result.ok) {
+      await loadComments(currentIssue.id);
+    } else {
+      showError(result.error);
+    }
+  } catch (err) {
+    showError(err);
+  }
+}
+
+async function deleteComment(commentId) {
+  if (!confirm('Delete this comment?')) return;
+
+  try {
+    const result = await invoke('delete_comment', { commentId });
+    if (result.ok) {
       await loadComments(currentIssue.id);
     } else {
       showError(result.error);

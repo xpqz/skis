@@ -23,7 +23,26 @@ const labelsTrigger = document.getElementById('labels-trigger');
 const labelsMenu = document.getElementById('labels-menu');
 const selectedLabelsEl = document.getElementById('selected-labels');
 
+// Preview elements
+const tabEdit = document.getElementById('tab-edit');
+const tabPreview = document.getElementById('tab-preview');
+const bodyPreview = document.getElementById('body-preview');
+
 async function init() {
+  // Configure marked for GitHub-flavored markdown with syntax highlighting
+  marked.setOptions({
+    gfm: true,
+    breaks: true,
+    highlight: function(code, lang) {
+      if (lang && hljs.getLanguage(lang)) {
+        try {
+          return hljs.highlight(code, { language: lang }).value;
+        } catch (e) {}
+      }
+      return hljs.highlightAuto(code).value;
+    }
+  });
+
   // Restore window size/position
   await restoreWindowState();
 
@@ -78,6 +97,7 @@ async function init() {
 
   renderLabelsDropdown();
   setupLabelsDropdown();
+  setupPreviewTabs();
   inputTitle.focus();
 }
 
@@ -140,6 +160,30 @@ function setupLabelsDropdown() {
     if (!labelsDropdown.contains(e.target)) {
       labelsMenu.classList.remove('open');
       labelsTrigger.classList.remove('open');
+    }
+  });
+}
+
+function setupPreviewTabs() {
+  tabEdit.addEventListener('click', () => {
+    tabEdit.classList.add('active');
+    tabPreview.classList.remove('active');
+    inputBody.style.display = 'block';
+    bodyPreview.classList.remove('active');
+  });
+
+  tabPreview.addEventListener('click', () => {
+    tabPreview.classList.add('active');
+    tabEdit.classList.remove('active');
+    inputBody.style.display = 'none';
+    bodyPreview.classList.add('active');
+
+    // Render markdown preview
+    const content = inputBody.value.trim();
+    if (content) {
+      bodyPreview.innerHTML = marked.parse(content);
+    } else {
+      bodyPreview.innerHTML = '';
     }
   });
 }

@@ -386,6 +386,47 @@ pub fn get_comments(conn: &Connection, issue_id: i64) -> Result<Vec<Comment>> {
     Ok(comments)
 }
 
+/// Update a comment's body
+pub fn update_comment(conn: &Connection, comment_id: i64, body: &str) -> Result<Comment> {
+    let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+
+    let rows = conn.execute(
+        "UPDATE comments SET body = ?1, updated_at = ?2 WHERE id = ?3",
+        params![body, now, comment_id],
+    )?;
+
+    if rows == 0 {
+        return Err(Error::CommentNotFound(comment_id));
+    }
+
+    let comment = conn.query_row(
+        "SELECT id, issue_id, body, created_at, updated_at FROM comments WHERE id = ?1",
+        [comment_id],
+        |row| {
+            Ok(Comment {
+                id: row.get(0)?,
+                issue_id: row.get(1)?,
+                body: row.get(2)?,
+                created_at: parse_datetime(row.get(3)?),
+                updated_at: parse_datetime(row.get(4)?),
+            })
+        },
+    )?;
+
+    Ok(comment)
+}
+
+/// Delete a comment
+pub fn delete_comment(conn: &Connection, comment_id: i64) -> Result<()> {
+    let rows = conn.execute("DELETE FROM comments WHERE id = ?1", [comment_id])?;
+
+    if rows == 0 {
+        return Err(Error::CommentNotFound(comment_id));
+    }
+
+    Ok(())
+}
+
 // Phase 2: Search operations
 
 /// Search issues using FTS5 full-text search
@@ -480,6 +521,25 @@ pub fn add_link(conn: &Connection, issue_a: i64, issue_b: i64) -> Result<()> {
     // Check for self-link
     if issue_a == issue_b {
         return Err(Error::SelfLink);
+    }
+
+    // Check that both issues exist
+    let issue_a_exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM issues WHERE id = ?1)",
+        [issue_a],
+        |row| row.get(0),
+    )?;
+    if !issue_a_exists {
+        return Err(Error::IssueNotFound(issue_a));
+    }
+
+    let issue_b_exists: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM issues WHERE id = ?1)",
+        [issue_b],
+        |row| row.get(0),
+    )?;
+    if !issue_b_exists {
+        return Err(Error::IssueNotFound(issue_b));
     }
 
     // Store with canonical ordering (smaller ID first)

@@ -13,6 +13,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 pub struct AppState {
     db: Mutex<Option<SkisDb>>,
     current_dir: Mutex<Option<PathBuf>>,
+    recent_paths: Mutex<Vec<String>>,
 }
 
 impl Default for AppState {
@@ -20,6 +21,7 @@ impl Default for AppState {
         Self {
             db: Mutex::new(None),
             current_dir: Mutex::new(None),
+            recent_paths: Mutex::new(Vec::new()),
         }
     }
 }
@@ -456,6 +458,26 @@ fn add_comment(state: State<AppState>, issue_id: i64, body: String) -> Response<
     })
 }
 
+#[tauri::command]
+fn update_comment(state: State<AppState>, comment_id: i64, body: String) -> Response<Comment> {
+    with_db!(state, |db: &SkisDb| {
+        match ski::db::update_comment(db.conn(), comment_id, &body) {
+            Ok(comment) => Response::ok(comment),
+            Err(e) => Response::err(e.to_string()),
+        }
+    })
+}
+
+#[tauri::command]
+fn delete_comment(state: State<AppState>, comment_id: i64) -> Response<()> {
+    with_db!(state, |db: &SkisDb| {
+        match ski::db::delete_comment(db.conn(), comment_id) {
+            Ok(()) => Response::ok(()),
+            Err(e) => Response::err(e.to_string()),
+        }
+    })
+}
+
 // ============ Label Commands ============
 
 #[tauri::command]
@@ -544,6 +566,64 @@ fn unlink_issues(state: State<AppState>, issue_a: i64, issue_b: i64) -> Response
     })
 }
 
+// ============ Export Commands ============
+
+#[derive(Debug, Serialize)]
+pub struct ExportData {
+    pub issues: Vec<IssueView>,
+    pub labels: Vec<Label>,
+    pub exported_at: String,
+}
+
+#[tauri::command]
+fn export_json(state: State<AppState>) -> Response<ExportData> {
+    with_db!(state, |db: &SkisDb| {
+        // Get all issues (including closed, but not deleted)
+        let filter = IssueFilter {
+            state: None,
+            issue_type: None,
+            labels: vec![],
+            sort_by: SortField::Id,
+            sort_order: SortOrder::Asc,
+            limit: 100000,
+            offset: 0,
+            include_deleted: false,
+        };
+
+        let issues = match ski::db::list_issues(db.conn(), &filter) {
+            Ok(i) => i,
+            Err(e) => return Response::err(e.to_string()),
+        };
+
+        // Enrich each issue with labels, links, and comments
+        let mut views = Vec::with_capacity(issues.len());
+        for issue in issues {
+            let labels = ski::db::get_issue_labels(db.conn(), issue.id).unwrap_or_default();
+            let linked_issues =
+                ski::db::get_linked_issues_with_titles(db.conn(), issue.id).unwrap_or_default();
+            views.push(IssueView {
+                issue,
+                labels,
+                linked_issues,
+            });
+        }
+
+        // Get all labels
+        let labels = match ski::db::list_labels(db.conn()) {
+            Ok(l) => l,
+            Err(e) => return Response::err(e.to_string()),
+        };
+
+        let exported_at = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+
+        Response::ok(ExportData {
+            issues: views,
+            labels,
+            exported_at,
+        })
+    })
+}
+
 // ============ Window Commands ============
 
 #[tauri::command]
@@ -579,9 +659,47 @@ fn open_edit_window(app: AppHandle, issue_id: Option<i64>) -> Response<()> {
 
 // ============ Menu Commands ============
 
+static WINDOW_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
+
 #[tauri::command]
-fn update_recent_menu(app: AppHandle, paths: Vec<String>) -> Response<()> {
+fn open_new_window(app: AppHandle) -> Response<()> {
+    let counter = WINDOW_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    let label = format!("main-{}", counter);
+
+    match WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App("index.html".into()))
+        .title("SKIS")
+        .inner_size(1200.0, 800.0)
+        .min_inner_size(800.0, 600.0)
+        .resizable(true)
+        .build()
+    {
+        Ok(_) => Response::ok(()),
+        Err(e) => Response::err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+fn update_recent_menu(app: AppHandle, state: State<AppState>, paths: Vec<String>) -> Response<()> {
+    // Store paths in state for later rebuilds
+    {
+        let mut recent = state.recent_paths.lock().unwrap();
+        *recent = paths.clone();
+    }
     if let Err(e) = rebuild_menu(&app, &paths) {
+        return Response::err(e.to_string());
+    }
+    Response::ok(())
+}
+
+fn rebuild_menu_from_state(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let state: State<AppState> = app.state();
+    let paths = state.recent_paths.lock().unwrap().clone();
+    rebuild_menu(app, &paths)
+}
+
+#[tauri::command]
+fn refresh_window_menu(app: AppHandle) -> Response<()> {
+    if let Err(e) = rebuild_menu_from_state(&app) {
         return Response::err(e.to_string());
     }
     Response::ok(())
@@ -615,6 +733,18 @@ fn rebuild_menu(app: &AppHandle, recent_paths: &[String]) -> Result<(), Box<dyn 
     // Build File menu
     let file_menu = SubmenuBuilder::new(app, "File")
         .item(
+            &MenuItemBuilder::new("New Window")
+                .id("new-window")
+                .accelerator("CmdOrCtrl+Shift+N")
+                .build(app)?,
+        )
+        .item(
+            &MenuItemBuilder::new("New Database...")
+                .id("new-database")
+                .build(app)?,
+        )
+        .separator()
+        .item(
             &MenuItemBuilder::new("Open...")
                 .id("open")
                 .accelerator("CmdOrCtrl+O")
@@ -626,6 +756,13 @@ fn rebuild_menu(app: &AppHandle, recent_paths: &[String]) -> Result<(), Box<dyn 
             &MenuItemBuilder::new("New Issue")
                 .id("new-issue")
                 .accelerator("CmdOrCtrl+N")
+                .build(app)?,
+        )
+        .separator()
+        .item(
+            &MenuItemBuilder::new("Export to JSON...")
+                .id("export-json")
+                .accelerator("CmdOrCtrl+Shift+E")
                 .build(app)?,
         )
         .separator()
@@ -660,11 +797,38 @@ fn rebuild_menu(app: &AppHandle, recent_paths: &[String]) -> Result<(), Box<dyn 
         )
         .build()?;
 
+    // Build Window menu with list of open windows
+    let mut window_menu = SubmenuBuilder::new(app, "Window")
+        .minimize()
+        .maximize()
+        .separator()
+        .close_window()
+        .separator();
+
+    // Add all open windows to the menu with checkmark for focused window
+    let windows: Vec<_> = app.webview_windows().into_iter().collect();
+    for (label, window) in &windows {
+        let title = window.title().unwrap_or_else(|_| label.clone());
+        let is_focused = window.is_focused().unwrap_or(false);
+        let display_title = if is_focused {
+            format!("✓ {}", title)
+        } else {
+            format!("   {}", title)
+        };
+        let item = MenuItemBuilder::new(&display_title)
+            .id(format!("window:{}", label))
+            .build(app)?;
+        window_menu = window_menu.item(&item);
+    }
+
+    let window_menu = window_menu.build()?;
+
     // Build full menu
     let menu = MenuBuilder::new(app)
         .item(&file_menu)
         .item(&edit_menu)
         .item(&view_menu)
+        .item(&window_menu)
         .build()?;
 
     app.set_menu(menu)?;
@@ -677,6 +841,7 @@ fn rebuild_menu(app: &AppHandle, recent_paths: &[String]) -> Result<(), Box<dyn 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .manage(AppState::default())
         .setup(|app| {
@@ -686,14 +851,36 @@ pub fn run() {
         })
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
-            if id == "open" {
+            if id == "new-window" {
+                let _ = open_new_window(app.clone());
+                // Rebuild menu to update window list
+                let _ = rebuild_menu_from_state(&app);
+            } else if id == "new-database" {
+                let _ = app.emit("menu-new-database", ());
+            } else if id == "open" {
                 let _ = app.emit("menu-open", ());
             } else if id == "reload" {
                 let _ = app.emit("menu-reload", ());
             } else if id == "toggle-sidebar" {
                 let _ = app.emit("menu-toggle-sidebar", ());
+            } else if id == "export-json" {
+                let _ = app.emit("menu-export-json", ());
             } else if let Some(path) = id.strip_prefix("recent:") {
                 let _ = app.emit("menu-open-recent", path);
+            } else if let Some(label) = id.strip_prefix("window:") {
+                // Focus the selected window
+                if let Some(window) = app.get_webview_window(label) {
+                    let _ = window.set_focus();
+                }
+            }
+        })
+        .on_window_event(|window, event| {
+            // Rebuild menu when windows are created, destroyed, or focused
+            match event {
+                tauri::WindowEvent::Destroyed | tauri::WindowEvent::Focused(true) => {
+                    let _ = rebuild_menu_from_state(window.app_handle());
+                }
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -714,6 +901,8 @@ pub fn run() {
             // Comments
             get_comments,
             add_comment,
+            update_comment,
+            delete_comment,
             // Labels
             list_labels,
             create_label,
@@ -723,10 +912,14 @@ pub fn run() {
             // Links
             link_issues,
             unlink_issues,
+            // Export
+            export_json,
             // Windows
             open_edit_window,
+            open_new_window,
             // Menu
             update_recent_menu,
+            refresh_window_menu,
         ])
         .run(tauri::generate_context!())
         .expect("error running SKIS GUI");

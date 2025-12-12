@@ -11,6 +11,9 @@ pub enum Error {
     #[error("Issue #{0} not found")]
     IssueNotFound(i64),
 
+    #[error("Comment #{0} not found")]
+    CommentNotFound(i64),
+
     #[error("Label '{0}' not found. Create it with: skis label create {0}")]
     LabelNotFound(String),
 

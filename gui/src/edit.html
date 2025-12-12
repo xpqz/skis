@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Edit Issue</title>
   <link rel="stylesheet" href="edit.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
   <form id="issue-form">
@@ -35,8 +38,15 @@
       </div>
     </div>
     <div class="form-group form-group-body">
-      <label for="input-body">Description</label>
-      <textarea id="input-body" placeholder="Describe the issue..."></textarea>
+      <div class="body-header">
+        <label for="input-body">Description</label>
+        <div class="body-tabs">
+          <button type="button" class="body-tab active" id="tab-edit">Edit</button>
+          <button type="button" class="body-tab" id="tab-preview">Preview</button>
+        </div>
+      </div>
+      <textarea id="input-body" placeholder="Describe the issue... (Markdown supported)"></textarea>
+      <div id="body-preview" class="body-preview markdown-body"></div>
     </div>
     <div class="form-actions">
       <button type="button" id="btn-cancel" class="btn-secondary">Cancel</button>
