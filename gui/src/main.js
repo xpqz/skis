@@ -4,6 +4,18 @@ const { open } = window.__TAURI__.dialog;
 const { listen } = window.__TAURI__.event;
 const { getCurrentWindow } = window.__TAURI__.window;
 
+// ============ Logging ============
+
+const log = {
+  _send(level, message, context) {
+    invoke('log_frontend', { level, message, context: context || null }).catch(() => {});
+  },
+  debug(message, context) { this._send('debug', message, context); },
+  info(message, context) { this._send('info', message, context); },
+  warn(message, context) { this._send('warn', message, context); },
+  error(message, context) { this._send('error', message, context); }
+};
+
 // ============ Constants ============
 
 const MAX_RECENT_DIRS = 10;
@@ -66,7 +78,10 @@ const detailLabels = document.getElementById('detail-labels');
 const labelsEditForm = document.getElementById('labels-edit-form');
 const labelsMenuInline = document.getElementById('labels-menu-inline');
 const btnEditLabels = document.getElementById('btn-edit-labels');
-const btnLabelsDone = document.getElementById('btn-labels-done');
+const newLabelForm = document.getElementById('new-label-form');
+const newLabelName = document.getElementById('new-label-name');
+const colorSwatches = document.getElementById('color-swatches');
+const btnSaveNewLabel = document.getElementById('btn-save-new-label');
 const detailBody = document.getElementById('detail-body');
 const detailBodyEdit = document.getElementById('detail-body-edit');
 const bodyEditInput = document.getElementById('body-edit-input');
@@ -124,6 +139,8 @@ async function init() {
   const win = getCurrentWindow();
   const isMainWindow = win.label === 'main';
 
+  log.info(`Window initialized: ${win.label}`, `isMain=${isMainWindow}`);
+
   // Restore window size/position
   await restoreWindowState();
 
@@ -140,7 +157,7 @@ async function init() {
       homeDir = result.data;
     }
   } catch (e) {
-    console.error('Could not get home dir:', e);
+    log.error(`Could not get home dir: ${e}`);
   }
 
   // Load recent directories
@@ -150,36 +167,55 @@ async function init() {
   await updateRecentMenu();
 
   // Listen for menu events
-  await listen('menu-open-recent', async (event) => {
+  // Helper to only handle menu events in the focused window
+  const onMenuEvent = (eventName, handler) => {
+    listen(eventName, async (event) => {
+      const focused = await win.isFocused();
+      if (!focused) {
+        log.debug(`Ignoring ${eventName} - window not focused`);
+        return;
+      }
+      handler(event);
+    });
+  };
+
+  onMenuEvent('menu-open-recent', async (event) => {
     const path = event.payload;
+    log.info(`Menu event: open-recent`, path);
     if (path) {
       await selectDirectory(path);
     }
   });
 
-  await listen('menu-open', async () => {
+  onMenuEvent('menu-open', async () => {
+    log.info('Menu event: open');
     await browseDirectory();
   });
 
-  await listen('menu-reload', async () => {
+  onMenuEvent('menu-reload', async () => {
+    log.info('Menu event: reload');
     await reload();
   });
 
-  await listen('menu-toggle-sidebar', () => {
+  onMenuEvent('menu-toggle-sidebar', () => {
+    log.debug('Menu event: toggle-sidebar');
     toggleSidebar();
   });
 
-  await listen('menu-new-database', async () => {
+  onMenuEvent('menu-new-database', async () => {
+    log.info('Menu event: new-database');
     await createNewDatabase();
   });
 
-  await listen('menu-export-json', async () => {
+  onMenuEvent('menu-export-json', async () => {
+    log.info('Menu event: export-json');
     await exportToJson();
   });
 
   // Listen for issue saved from edit window
   await listen('issue-saved', async (event) => {
     const { id } = event.payload;
+    log.info(`Issue saved event received`, `id=${id}`);
     await loadIssues();
     await loadLabels();
     if (id) {
@@ -191,11 +227,13 @@ async function init() {
   if (isMainWindow) {
     const savedDir = localStorage.getItem('skis_directory');
     if (savedDir) {
+      log.info(`Restoring saved directory`, savedDir);
       await selectDirectory(savedDir, true);
     }
   }
 
   setupEventListeners();
+  log.info('Frontend initialization complete');
 }
 
 function setupEventListeners() {
@@ -232,7 +270,25 @@ function setupEventListeners() {
 
   // Labels inline editing
   btnEditLabels.addEventListener('click', toggleEditLabels);
-  btnLabelsDone.addEventListener('click', finishEditLabels);
+
+  // New label creation
+  btnSaveNewLabel.addEventListener('click', saveNewLabel);
+  newLabelName.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveNewLabel();
+    } else if (e.key === 'Escape') {
+      hideNewLabelForm();
+    }
+  });
+  // Color swatch selection
+  colorSwatches.addEventListener('click', e => {
+    const swatch = e.target.closest('.color-swatch');
+    if (swatch) {
+      colorSwatches.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+      swatch.classList.add('selected');
+    }
+  });
 
   // Title inline editing
   btnEditTitle.addEventListener('click', toggleEditTitle);
@@ -328,22 +384,27 @@ function setupEventListeners() {
 // ============ Directory Management ============
 
 async function browseDirectory() {
+  log.info('browseDirectory called');
   try {
+    log.debug('Opening directory picker dialog');
     const selected = await open({
       directory: true,
       multiple: false
     });
+    log.info(`Directory picker result`, selected || 'cancelled');
     if (selected) {
       await selectDirectory(selected);
     }
   } catch (err) {
-    console.error('Error opening directory dialog:', err);
+    log.error(`Error opening directory dialog: ${err}`);
   }
 }
 
 async function selectDirectory(path, restoreState = false) {
+  log.info(`selectDirectory called`, `path=${path}, restoreState=${restoreState}`);
   try {
     const result = await invoke('select_directory', { path });
+    log.debug(`select_directory result`, `ok=${result.ok}, initialized=${result.data?.initialized}`);
     if (result.ok) {
       directoryPath.value = shortenPath(path);
       localStorage.setItem('skis_directory', path);
@@ -352,6 +413,7 @@ async function selectDirectory(path, restoreState = false) {
       addRecentDirectory(path);
 
       if (result.data.initialized) {
+        log.info(`Directory has existing SKIS database`, path);
         btnInit.style.display = 'none';
 
         // Restore app state before loading (filters, sort) - only for main window on startup
@@ -370,53 +432,72 @@ async function selectDirectory(path, restoreState = false) {
           await selectIssue(savedState.selectedIssueId);
         }
       } else {
+        log.info(`Directory not initialized`, path);
         btnInit.style.display = 'inline-block';
         showEmptyState('Directory not initialized. Click ⚡ to initialize SKIS.');
       }
     } else {
+      log.error(`selectDirectory error: ${result.error}`);
       showError(result.error);
     }
   } catch (err) {
+    log.error(`selectDirectory exception: ${err}`);
     showError(err);
   }
 }
 
 async function initRepository() {
+  log.info('initRepository called');
   try {
     const result = await invoke('init_repository');
+    log.debug(`init_repository result`, `ok=${result.ok}`);
     if (result.ok) {
+      log.info('Repository initialized successfully');
       btnInit.style.display = 'none';
       await loadIssues();
       await loadLabels();
     } else {
+      log.error(`initRepository error: ${result.error}`);
       showError(result.error);
     }
   } catch (err) {
+    log.error(`initRepository exception: ${err}`);
     showError(err);
   }
 }
 
 async function createNewDatabase() {
+  log.info('createNewDatabase called');
   try {
+    log.debug('Opening directory picker for new database');
     const selected = await open({
       directory: true,
       multiple: false,
       title: 'Choose location for new SKIS database'
     });
+    log.info(`New database directory picker result`, selected || 'cancelled');
     if (selected) {
       // Select the directory first
+      log.debug(`Calling select_directory`, selected);
       const selectResult = await invoke('select_directory', { path: selected });
+      log.debug(`select_directory result`, `ok=${selectResult.ok}, initialized=${selectResult.data?.initialized}`);
       if (selectResult.ok) {
         if (selectResult.data.initialized) {
           // Already has a database
+          log.warn(`Directory already has SKIS database`, selected);
           if (!confirm('This directory already contains a SKIS database. Open it instead?')) {
+            log.info('User cancelled opening existing database');
             return;
           }
+          log.info('User chose to open existing database');
           await selectDirectory(selected);
         } else {
           // Initialize new database
+          log.info(`Initializing new database`, selected);
           const initResult = await invoke('init_repository');
+          log.debug(`init_repository result`, `ok=${initResult.ok}`);
           if (initResult.ok) {
+            log.info(`New database created successfully`, selected);
             directoryPath.value = shortenPath(selected);
             localStorage.setItem('skis_directory', selected);
             addRecentDirectory(selected);
@@ -424,15 +505,17 @@ async function createNewDatabase() {
             await loadIssues();
             await loadLabels();
           } else {
+            log.error(`Failed to create new database: ${initResult.error}`);
             showError(initResult.error);
           }
         }
       } else {
+        log.error(`select_directory failed: ${selectResult.error}`);
         showError(selectResult.error);
       }
     }
   } catch (err) {
-    console.error('Error creating database:', err);
+    log.error(`createNewDatabase exception: ${err}`);
   }
 }
 
@@ -783,7 +866,11 @@ function renderIssueDetail() {
   }
 
   // Labels
-  detailLabels.innerHTML = currentIssue.labels.map(l => renderLabelPill(l)).join('');
+  if (currentIssue.labels.length > 0) {
+    detailLabels.innerHTML = currentIssue.labels.map(l => renderLabelPill(l)).join('');
+  } else {
+    detailLabels.innerHTML = '<span class="detail-labels-placeholder">(no labels)</span>';
+  }
 
   // Linked issues
   if (currentIssue.linked_issues.length > 0) {
@@ -827,6 +914,7 @@ function renderIssueDetail() {
   detailLabels.style.display = 'flex';
   btnEditLabels.textContent = '✎';
   btnEditLabels.title = 'Edit labels';
+  newLabelForm.style.display = 'none';
 
   // Reset title edit state (in case it was open for a different issue)
   detailTitleEdit.style.display = 'none';
@@ -1063,8 +1151,10 @@ function startEditLabels() {
   // Build the labels menu with current selection
   const currentLabelNames = new Set(currentIssue.labels.map(l => l.name));
 
+  const newLabelBtn = '<button class="btn-new-label" id="btn-new-label" title="New label">+</button>';
+
   if (labels.length === 0) {
-    labelsMenuInline.innerHTML = '<span style="color: var(--color-text-muted); font-size: 0.8rem;">No labels defined</span>';
+    labelsMenuInline.innerHTML = newLabelBtn;
   } else {
     labelsMenuInline.innerHTML = labels.map(l => {
       const isSelected = currentLabelNames.has(l.name);
@@ -1074,13 +1164,16 @@ function startEditLabels() {
           ${renderLabelPill(l)}
         </label>
       `;
-    }).join('');
+    }).join('') + newLabelBtn;
 
     // Add change handlers
     labelsMenuInline.querySelectorAll('input[type="checkbox"]').forEach(cb => {
       cb.addEventListener('change', () => toggleLabel(cb.value, cb.checked));
     });
   }
+
+  // Add click handler for new label button
+  document.getElementById('btn-new-label').addEventListener('click', toggleNewLabelForm);
 
   // Hide labels display, show edit form
   detailLabels.style.display = 'none';
@@ -1144,6 +1237,9 @@ function finishEditLabels() {
   labelsEditForm.style.display = 'none';
   detailLabels.style.display = 'flex';
 
+  // Hide new label form if open
+  hideNewLabelForm();
+
   // Restore pencil icon
   btnEditLabels.textContent = '✎';
   btnEditLabels.title = 'Edit labels';
@@ -1154,6 +1250,83 @@ function toggleEditLabels() {
     startEditLabels();
   } else {
     finishEditLabels();
+  }
+}
+
+// ============ New Label Creation ============
+
+function showNewLabelForm() {
+  newLabelForm.style.display = 'block';
+  const btn = document.getElementById('btn-new-label');
+  if (btn) {
+    btn.textContent = '−';
+    btn.title = 'Cancel';
+  }
+  newLabelName.value = '';
+  // Reset color selection to first (gray)
+  colorSwatches.querySelectorAll('.color-swatch').forEach((swatch, i) => {
+    swatch.classList.toggle('selected', i === 0);
+  });
+  newLabelName.focus();
+}
+
+function hideNewLabelForm() {
+  newLabelForm.style.display = 'none';
+  const btn = document.getElementById('btn-new-label');
+  if (btn) {
+    btn.textContent = '+';
+    btn.title = 'New label';
+  }
+  newLabelName.value = '';
+}
+
+function toggleNewLabelForm() {
+  if (newLabelForm.style.display === 'none' || newLabelForm.style.display === '') {
+    showNewLabelForm();
+  } else {
+    hideNewLabelForm();
+  }
+}
+
+function getSelectedColor() {
+  const selected = colorSwatches.querySelector('.color-swatch.selected');
+  return selected ? selected.dataset.color : '6b7280';
+}
+
+async function saveNewLabel() {
+  const name = newLabelName.value.trim().toLowerCase();
+  if (!name) {
+    newLabelName.focus();
+    return;
+  }
+
+  const color = getSelectedColor();
+  log.info(`Creating new label`, `name=${name}, color=${color}`);
+
+  try {
+    const result = await invoke('create_label', { name, description: null, color });
+    if (result.ok) {
+      log.info(`Label created successfully`, name);
+      // Reload labels
+      await loadLabels();
+
+      // Add the new label to the current issue
+      if (currentIssue) {
+        await toggleLabel(name, true);
+      }
+
+      // Hide the form
+      hideNewLabelForm();
+
+      // Refresh the label editor to show the new label
+      startEditLabels();
+    } else {
+      log.error(`Failed to create label: ${result.error}`);
+      showError(result.error);
+    }
+  } catch (err) {
+    log.error(`Create label exception: ${err}`);
+    showError(err);
   }
 }
 

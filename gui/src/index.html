@@ -96,21 +96,29 @@
             </div>
           </div>
           <div class="detail-labels-section">
-            <div class="labels-header">
-              <h3>Labels</h3>
-              <button class="btn-icon btn-edit-labels" id="btn-edit-labels" title="Edit labels">✎</button>
-            </div>
             <div class="detail-labels" id="detail-labels">
               <!-- Labels will be rendered here -->
             </div>
+            <button class="btn-icon btn-edit-labels" id="btn-edit-labels" title="Edit labels">✎</button>
             <div class="labels-edit-form" id="labels-edit-form" style="display: none;">
-              <div class="labels-dropdown-inline" id="labels-dropdown-inline">
-                <div class="labels-menu-inline" id="labels-menu-inline">
-                  <!-- Label checkboxes will be populated dynamically -->
-                </div>
+              <div class="labels-menu-inline" id="labels-menu-inline">
+                <!-- Label checkboxes will be populated dynamically -->
               </div>
-              <div class="labels-edit-actions">
-                <button class="btn-secondary btn-small" id="btn-labels-done">Done</button>
+              <div class="new-label-form" id="new-label-form" style="display: none;">
+                <input type="text" id="new-label-name" placeholder="Label name" maxlength="50">
+                <div class="color-swatches" id="color-swatches">
+                  <button type="button" class="color-swatch selected" data-color="6b7280" style="background-color: #6b7280;" title="Gray"></button>
+                  <button type="button" class="color-swatch" data-color="ef4444" style="background-color: #ef4444;" title="Red"></button>
+                  <button type="button" class="color-swatch" data-color="f97316" style="background-color: #f97316;" title="Orange"></button>
+                  <button type="button" class="color-swatch" data-color="eab308" style="background-color: #eab308;" title="Yellow"></button>
+                  <button type="button" class="color-swatch" data-color="22c55e" style="background-color: #22c55e;" title="Green"></button>
+                  <button type="button" class="color-swatch" data-color="3b82f6" style="background-color: #3b82f6;" title="Blue"></button>
+                  <button type="button" class="color-swatch" data-color="8b5cf6" style="background-color: #8b5cf6;" title="Purple"></button>
+                  <button type="button" class="color-swatch" data-color="ec4899" style="background-color: #ec4899;" title="Pink"></button>
+                </div>
+                <div class="new-label-actions">
+                  <button class="btn-primary btn-small" id="btn-save-new-label">Create</button>
+                </div>
               </div>
             </div>
           </div>

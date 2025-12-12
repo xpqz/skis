@@ -8,6 +8,69 @@ use std::sync::Mutex;
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::webview::WebviewWindowBuilder;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tracing::{debug, error, info, warn};
+use tracing_appender::rolling::{RollingFileAppender, Rotation};
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+
+// ============ Logging Setup ============
+
+use std::sync::OnceLock;
+use tracing_appender::non_blocking::WorkerGuard;
+
+// Keep the guard alive for the entire application lifetime
+static LOG_GUARD: OnceLock<WorkerGuard> = OnceLock::new();
+
+fn setup_logging() {
+    // Get log directory - use platform-appropriate location
+    let log_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("skis")
+        .join("logs");
+
+    // Create log directory if it doesn't exist
+    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+        eprintln!("Failed to create log directory {:?}: {}", log_dir, e);
+    }
+
+    // Create a rolling file appender (new file each day)
+    let file_appender = RollingFileAppender::new(Rotation::DAILY, &log_dir, "skis.log");
+
+    // Create a non-blocking writer
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+    // Store the guard in a static to keep logging alive for app lifetime
+    let _ = LOG_GUARD.set(guard);
+
+    // Set up the subscriber with both file and stdout output
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info,skis_gui=debug,frontend=debug"));
+
+    let file_layer = fmt::layer()
+        .with_writer(non_blocking)
+        .with_ansi(false)
+        .with_target(true)
+        .with_thread_ids(false)
+        .with_file(true)
+        .with_line_number(true);
+
+    let stdout_layer = fmt::layer()
+        .with_writer(std::io::stderr)
+        .with_ansi(true)
+        .with_target(true)
+        .with_thread_ids(false)
+        .with_level(true);
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(file_layer)
+        .with(stdout_layer)
+        .init();
+
+    info!(
+        log_dir = %log_dir.display(),
+        "SKIS logging initialized"
+    );
+}
 
 // Application state holding the database connection
 pub struct AppState {
@@ -180,12 +243,16 @@ fn get_current_dir(state: State<AppState>) -> Response<DirectoryState> {
 
 #[tauri::command]
 fn select_directory(state: State<AppState>, path: String) -> Response<DirectoryState> {
+    info!(path = %path, "Selecting directory");
     let dir_path = PathBuf::from(&path);
     let skis_dir = dir_path.join(".skis");
+
+    debug!(skis_dir = %skis_dir.display(), "Looking for .skis directory");
 
     // Try to open existing SKIS repository
     match SkisDb::open_at(&skis_dir) {
         Ok(db) => {
+            info!(path = %path, "Opened existing SKIS repository");
             let mut db_guard = state.db.lock().unwrap();
             let mut dir_guard = state.current_dir.lock().unwrap();
             *db_guard = Some(db);
@@ -195,7 +262,8 @@ fn select_directory(state: State<AppState>, path: String) -> Response<DirectoryS
                 initialized: true,
             })
         }
-        Err(_) => {
+        Err(e) => {
+            debug!(path = %path, error = %e, "Directory not initialized");
             // Not initialized - store directory but no db
             let mut dir_guard = state.current_dir.lock().unwrap();
             let mut db_guard = state.db.lock().unwrap();
@@ -214,12 +282,18 @@ fn init_repository(state: State<AppState>) -> Response<DirectoryState> {
     let dir_guard = state.current_dir.lock().unwrap();
     let dir_path = match dir_guard.as_ref() {
         Some(p) => p.clone(),
-        None => return Response::err("No directory selected"),
+        None => {
+            warn!("init_repository called with no directory selected");
+            return Response::err("No directory selected");
+        }
     };
     drop(dir_guard);
 
+    info!(path = %dir_path.display(), "Initializing new SKIS repository");
+
     match SkisDb::init(&dir_path) {
         Ok(db) => {
+            info!(path = %dir_path.display(), "Successfully initialized SKIS repository");
             let mut db_guard = state.db.lock().unwrap();
             *db_guard = Some(db);
             Response::ok(DirectoryState {
@@ -227,7 +301,10 @@ fn init_repository(state: State<AppState>) -> Response<DirectoryState> {
                 initialized: true,
             })
         }
-        Err(e) => Response::err(e.to_string()),
+        Err(e) => {
+            error!(path = %dir_path.display(), error = %e, "Failed to initialize repository");
+            Response::err(e.to_string())
+        }
     }
 }
 
@@ -236,6 +313,27 @@ fn get_home_dir() -> Response<String> {
     match dirs::home_dir() {
         Some(p) => Response::ok(p.display().to_string()),
         None => Response::err("Could not determine home directory"),
+    }
+}
+
+#[tauri::command]
+fn get_log_path() -> Response<String> {
+    let log_dir = dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("skis")
+        .join("logs");
+    Response::ok(log_dir.display().to_string())
+}
+
+/// Log a message from the frontend
+#[tauri::command]
+fn log_frontend(level: String, message: String, context: Option<String>) {
+    let ctx = context.as_deref().unwrap_or("");
+    match level.to_lowercase().as_str() {
+        "error" => error!(target: "frontend", context = %ctx, "{}", message),
+        "warn" => warn!(target: "frontend", context = %ctx, "{}", message),
+        "info" => info!(target: "frontend", context = %ctx, "{}", message),
+        "debug" | _ => debug!(target: "frontend", context = %ctx, "{}", message),
     }
 }
 
@@ -297,6 +395,7 @@ fn get_issue(state: State<AppState>, id: i64) -> Response<IssueView> {
 
 #[tauri::command]
 fn create_issue(state: State<AppState>, params: CreateIssueParams) -> Response<IssueView> {
+    debug!(title = %params.title, "Creating new issue");
     with_db!(state, |db: &SkisDb| {
         let issue_type = params
             .issue_type
@@ -313,6 +412,7 @@ fn create_issue(state: State<AppState>, params: CreateIssueParams) -> Response<I
 
         match ski::db::create_issue(db.conn(), &create) {
             Ok(issue) => {
+                info!(id = issue.id, title = %issue.title, "Created issue");
                 let labels = ski::db::get_issue_labels(db.conn(), issue.id).unwrap_or_default();
                 Response::ok(IssueView {
                     issue,
@@ -320,7 +420,10 @@ fn create_issue(state: State<AppState>, params: CreateIssueParams) -> Response<I
                     linked_issues: vec![],
                 })
             }
-            Err(e) => Response::err(e.to_string()),
+            Err(e) => {
+                error!(error = %e, "Failed to create issue");
+                Response::err(e.to_string())
+            }
         }
     })
 }
@@ -797,6 +900,15 @@ fn rebuild_menu(app: &AppHandle, recent_paths: &[String]) -> Result<(), Box<dyn 
         )
         .build()?;
 
+    // Build Help menu
+    let help_menu = SubmenuBuilder::new(app, "Help")
+        .item(
+            &MenuItemBuilder::new("View Logs...")
+                .id("view-logs")
+                .build(app)?,
+        )
+        .build()?;
+
     // Build Window menu with list of open windows
     let mut window_menu = SubmenuBuilder::new(app, "Window")
         .minimize()
@@ -829,6 +941,7 @@ fn rebuild_menu(app: &AppHandle, recent_paths: &[String]) -> Result<(), Box<dyn 
         .item(&edit_menu)
         .item(&view_menu)
         .item(&window_menu)
+        .item(&help_menu)
         .build()?;
 
     app.set_menu(menu)?;
@@ -839,38 +952,72 @@ fn rebuild_menu(app: &AppHandle, recent_paths: &[String]) -> Result<(), Box<dyn 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize logging first
+    setup_logging();
+
+    info!("Starting SKIS GUI application");
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .manage(AppState::default())
         .setup(|app| {
+            info!("Tauri app setup complete");
             // Build initial menu with empty recent list
             rebuild_menu(app.handle(), &[])?;
             Ok(())
         })
         .on_menu_event(|app, event| {
             let id = event.id().as_ref();
+            debug!(menu_id = %id, "Menu event triggered");
             if id == "new-window" {
+                info!("Opening new window from menu");
                 let _ = open_new_window(app.clone());
                 // Rebuild menu to update window list
                 let _ = rebuild_menu_from_state(&app);
             } else if id == "new-database" {
+                info!("New database requested from menu");
                 let _ = app.emit("menu-new-database", ());
             } else if id == "open" {
+                debug!("Open directory requested from menu");
                 let _ = app.emit("menu-open", ());
             } else if id == "reload" {
+                debug!("Reload requested from menu");
                 let _ = app.emit("menu-reload", ());
             } else if id == "toggle-sidebar" {
+                debug!("Toggle sidebar requested from menu");
                 let _ = app.emit("menu-toggle-sidebar", ());
             } else if id == "export-json" {
+                info!("Export to JSON requested from menu");
                 let _ = app.emit("menu-export-json", ());
             } else if let Some(path) = id.strip_prefix("recent:") {
+                info!(path = %path, "Opening recent directory from menu");
                 let _ = app.emit("menu-open-recent", path);
             } else if let Some(label) = id.strip_prefix("window:") {
+                debug!(window = %label, "Focusing window from menu");
                 // Focus the selected window
                 if let Some(window) = app.get_webview_window(label) {
                     let _ = window.set_focus();
+                }
+            } else if id == "view-logs" {
+                info!("View logs requested from menu");
+                let log_dir = dirs::data_local_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join("skis")
+                    .join("logs");
+                // Open the log directory in the system file browser
+                #[cfg(target_os = "macos")]
+                {
+                    let _ = std::process::Command::new("open").arg(&log_dir).spawn();
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    let _ = std::process::Command::new("explorer").arg(&log_dir).spawn();
+                }
+                #[cfg(target_os = "linux")]
+                {
+                    let _ = std::process::Command::new("xdg-open").arg(&log_dir).spawn();
                 }
             }
         })
@@ -889,6 +1036,8 @@ pub fn run() {
             select_directory,
             init_repository,
             get_home_dir,
+            get_log_path,
+            log_frontend,
             // Issues
             list_issues,
             get_issue,

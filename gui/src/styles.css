@@ -424,22 +424,12 @@ button {
 
 /* Labels section with inline editing */
 .detail-labels-section {
-  margin-bottom: var(--spacing-md);
-}
-
-.detail-labels-section .labels-header {
   display: flex;
-  justify-content: space-between;
+  flex-wrap: wrap;
   align-items: center;
-  margin-bottom: var(--spacing-xs);
-}
-
-.detail-labels-section .labels-header h3 {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin: 0;
+  gap: var(--spacing-xs);
+  margin-bottom: var(--spacing-md);
+  min-height: 22px;
 }
 
 .btn-edit-labels {
@@ -460,15 +450,14 @@ button {
 .detail-labels {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--spacing-xs);
-  min-height: 20px;
 }
 
-.detail-labels:empty::before {
-  content: "No labels";
+.detail-labels-placeholder {
   color: var(--color-text-muted);
   font-size: 0.8rem;
-  font-style: italic;
+  opacity: 0.6;
 }
 
 .labels-edit-form {
@@ -481,6 +470,7 @@ button {
 .labels-menu-inline {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--spacing-xs);
   margin-bottom: var(--spacing-sm);
 }
@@ -503,9 +493,73 @@ button {
   display: none;
 }
 
-.labels-edit-actions {
+.btn-new-label {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1.3;
+  opacity: 0.4;
+  background: var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.btn-new-label:hover {
+  opacity: 1;
+}
+
+.new-label-form {
+  margin-top: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  background: var(--color-bg);
+  border-radius: var(--radius);
+}
+
+.new-label-form input[type="text"] {
+  width: 100%;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  margin-bottom: var(--spacing-xs);
+}
+
+.new-label-form input[type="text"]:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.color-swatches {
+  display: flex;
+  gap: 4px;
+  margin-bottom: var(--spacing-sm);
+}
+
+.color-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.1s, border-color 0.1s;
+}
+
+.color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.color-swatch.selected {
+  border-color: var(--color-text);
+}
+
+.new-label-actions {
   display: flex;
   justify-content: flex-end;
+  gap: var(--spacing-xs);
 }
 
 /* Body section with inline editing */

@@ -23,6 +23,8 @@ enum Commands {
     /// Manage labels
     #[command(subcommand)]
     Label(LabelCommands),
+    /// Show the GUI log file path
+    LogPath,
 }
 
 #[derive(Subcommand)]
@@ -307,6 +309,7 @@ fn main() -> ExitCode {
             LabelCommands::Create(args) => commands::label::create(args),
             LabelCommands::Delete(args) => commands::label::delete(args),
         },
+        Commands::LogPath => commands::log_path::run(),
     };
 
     match result {
