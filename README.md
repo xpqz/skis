@@ -14,11 +14,39 @@ A local, git-friendly issue tracker that stores everything in a SQLite database.
 
 ## Installation
 
-```bash
-# Build from source
-cargo build --release
+### Pre-built binaries
 
-# Install to PATH
+Download the latest release for your platform from [GitHub Releases](https://github.com/xpqz/skis/releases).
+
+**macOS (Apple Silicon)**
+```bash
+curl -LO https://github.com/xpqz/skis/releases/latest/download/skis-macos-aarch64.tar.gz
+tar xzf skis-macos-aarch64.tar.gz
+sudo mv skis /usr/local/bin/
+```
+
+**macOS (Intel)**
+```bash
+curl -LO https://github.com/xpqz/skis/releases/latest/download/skis-macos-x86_64.tar.gz
+tar xzf skis-macos-x86_64.tar.gz
+sudo mv skis /usr/local/bin/
+```
+
+**Linux (x86_64)**
+```bash
+curl -LO https://github.com/xpqz/skis/releases/latest/download/skis-linux-x86_64.tar.gz
+tar xzf skis-linux-x86_64.tar.gz
+sudo mv skis /usr/local/bin/
+```
+
+**Windows (x86_64)**
+
+Download `skis-windows-x86_64.zip` from the releases page, extract, and add to your PATH.
+
+### Build from source
+
+```bash
+cargo build --release
 cp target/release/skis /usr/local/bin/
 # or
 cargo install --path .
