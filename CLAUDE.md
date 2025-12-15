@@ -63,3 +63,5 @@ src/
 SQLite database at `.skis/issues.db` with tables: `issues`, `labels`, `issue_labels`, `comments`, `issue_links`, and `issues_fts` (full-text search).
 
 See PLAN.md for complete schema and CLI interface documentation.
+
+@docs/claude/claude-rust.md

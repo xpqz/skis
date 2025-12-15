@@ -1,4 +1,5 @@
 {
+  "includeCoAuthoredBy": false,
   "permissions": {
     "allow": [
       "Bash(gh issue --help:*)",
@@ -6,7 +7,18 @@
       "Bash(gh issue list:*)",
       "Bash(gh issue view:*)",
       "Bash(gh issue edit:*)",
-      "Bash(gh issue comment:*)"
+      "Bash(gh issue comment:*)",
+      "Bash(rustc:*)",
+      "Bash(cargo --version:*)",
+      "Bash(rustfmt:*)",
+      "Bash(clippy-driver:*)",
+      "Bash(curl:*)",
+      "Bash(sh:*)",
+      "Bash(sudo apt-get update:*)",
+      "Bash(apt-cache search:*)",
+      "Bash(apt-cache:*)",
+      "Bash(git reset:*)",
+      "Bash(git rm:*)"
     ]
   }
 }
