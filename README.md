@@ -39,6 +39,13 @@ tar xzf skis-linux-x86_64.tar.gz
 sudo mv skis /usr/local/bin/
 ```
 
+**Linux (ARM64)**
+```bash
+curl -LO https://github.com/xpqz/skis/releases/latest/download/skis-linux-aarch64.tar.gz
+tar xzf skis-linux-aarch64.tar.gz
+sudo mv skis /usr/local/bin/
+```
+
 **Windows (x86_64)**
 
 Download `skis-windows-x86_64.zip` from the releases page, extract, and add to your PATH.
